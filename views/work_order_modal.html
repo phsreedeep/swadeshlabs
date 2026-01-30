@@ -1,0 +1,42 @@
+{{define "work_order_modal.html"}}
+<div class="modal-header">
+    <h2>🔧 Work Order #101</h2>
+    <button class="modal-close" onclick="closeWorkOrderModal()">×</button>
+</div>
+<div class="modal-body">
+    <div class="alert alert-danger">
+        <strong>⚠️ CRITICAL FAULT DETECTED</strong>
+        <p>AI has detected a bearing fault with {{.Confidence}}% confidence.</p>
+    </div>
+    
+    <div class="work-order-details">
+        <h4>Diagnosis</h4>
+        <p>AI detected spectral signature of Inner Race Defect (BPFI frequency).</p>
+        
+        <h4>Recommended Actions</h4>
+        <ol>
+            <li>Isolate motor from power supply</li>
+            <li>Inspect bearing assembly for wear</li>
+            <li>Check lubrication levels</li>
+            <li>Replace bearing if necessary (SKU: BRG-6205-2RS)</li>
+            <li>Document repair and update maintenance log</li>
+        </ol>
+        
+        <h4>Detection Details</h4>
+        <table class="details-table">
+            <tr>
+                <td>ML Label:</td>
+                <td>{{.Label}}</td>
+            </tr>
+            <tr>
+                <td>Confidence:</td>
+                <td>{{.Confidence}}%</td>
+            </tr>
+        </table>
+    </div>
+</div>
+<div class="modal-footer">
+    <button class="btn btn-secondary" onclick="closeWorkOrderModal()">Dismiss</button>
+    <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">Acknowledge & Create Ticket</button>
+</div>
+{{end}}
