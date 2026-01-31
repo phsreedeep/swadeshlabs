@@ -23,9 +23,13 @@ t_h = [i / fs for i in range(len(g_h))]
 t_f = [i / fs for i in range(len(g_f))]
 
 # Plot
-plt.figure(figsize=(10, 4))
+T_START = 0.0
+T_END   = 0.1    # 100 ms window → stretches peaks
+plt.figure(figsize=(18, 4))
 plt.plot(t_h, g_h, label="Healthy", linewidth=1)
 plt.plot(t_f, g_f, label="Fault", linewidth=1)
+
+plt.xlim(T_START, T_END)
 
 plt.xlabel("Time (s)")
 plt.ylabel("Acceleration (g)")
@@ -34,7 +38,7 @@ plt.legend()
 plt.grid(True)
 plt.tight_layout()
 
-# Save with timestamp
+# Save with timestam8
 ts = datetime.now().strftime("%H-%M-%S")
 plt.savefig(f"plot_time_{ts}.png", dpi=300)
 

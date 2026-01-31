@@ -2,7 +2,7 @@
 
 // Sensor Address: 28 41 0E 03 00 02 24 A5
 byte addr[8] = {0x28, 0x41, 0x0E, 0x03, 0x00, 0x02, 0x24, 0xA5};
-OneWire ds(18);
+OneWire ds(14);
 
 void setup() {
   Serial.begin(115200);
