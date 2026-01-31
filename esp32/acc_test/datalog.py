@@ -14,7 +14,7 @@ SAMPLE_SIZE = struct.calcsize(SAMPLE_FMT)
 
 ROLLING_SAMPLES = 10_000
 BURSTS_PER_FILE = 30  # New threshold
-OUTPUT_DIR = "faulty"
+OUTPUT_DIR = "healthy"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ================= SERIAL =================

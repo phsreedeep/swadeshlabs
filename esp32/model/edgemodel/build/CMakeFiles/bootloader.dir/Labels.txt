@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/CMakeFiles/bootloader
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/CMakeFiles/bootloader.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/CMakeFiles/bootloader-complete.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/home/babumon/swadeshlabs/esp32/model/edgemodel/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

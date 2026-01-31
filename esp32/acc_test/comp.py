@@ -48,8 +48,8 @@ def analyze(g):
     }
 
 # ---- load data ----
-g_healthy = load_g("./healthy/esp32_21-28-27_batch_0.csv")
-g_faulty  = load_g("./faulty/esp32_21-35-41_batch_0.csv")
+g_healthy = load_g("./healthy/esp32_21-53-55_batch_0.csv")
+g_faulty  = load_g("./faulty/esp32_21-44-56_batch_0.csv")
 
 res_h = analyze(g_healthy)
 res_f = analyze(g_faulty)

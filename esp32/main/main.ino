@@ -13,7 +13,7 @@
 #define ZERO_G_V        1.708
 #define MV_PER_G        0.300
 
-#define CT_OFFSET       1300  // Tares 1290-1310 noise floor to 0
+#define CT_OFFSET       1300
 
 #define ONEWIRE_PIN     14
 OneWire ds(ONEWIRE_PIN);
@@ -22,7 +22,7 @@ OneWire ds(ONEWIRE_PIN);
 
 #pragma pack(push, 1)
 typedef struct {
-    uint32_t ts_us;    // Microseconds since program start
+    uint32_t ts_us;
     float audio_v;
     float accel_g;
     uint16_t ct_adc;
@@ -38,37 +38,34 @@ uint16_t sample_idx = 0;
 
 float current_temp = NAN;
 uint32_t last_temp_ms = 0;
-uint32_t start_time_us = 0; // Reference for manageable timestamps
+uint32_t start_time_us = 0;
 
-/* ================= NON-BLOCKING TEMP ================= */
+/* ================= TEMP (NON-BLOCKING) ================= */
 
 void update_temp_async() {
-    static enum { IDLE, CONVERTING } state = IDLE;
-    static uint32_t conversion_start_ms = 0;
+    static bool converting = false;
+    static uint32_t t0;
 
-    if (state == IDLE) {
-        if (millis() - last_temp_ms > 2000) {
-            if (ds.reset()) {
-                ds.skip();
-                ds.write(0x44); 
-                conversion_start_ms = millis();
-                state = CONVERTING;
-            }
+    if (!converting && millis() - last_temp_ms > 2000) {
+        if (ds.reset()) {
+            ds.skip();
+            ds.write(0x44);
+            t0 = millis();
+            converting = true;
         }
-    } 
-    else if (state == CONVERTING) {
-        if (millis() - conversion_start_ms >= 750) {
-            if (ds.reset()) {
-                ds.skip();
-                ds.write(0xBE);
-                byte data[9];
-                for (int i = 0; i < 9; i++) data[i] = ds.read();
-                int16_t raw = (data[1] << 8) | data[0];
-                current_temp = raw / 16.0;
-            }
-            last_temp_ms = millis();
-            state = IDLE;
+    }
+
+    if (converting && millis() - t0 >= 750) {
+        if (ds.reset()) {
+            ds.skip();
+            ds.write(0xBE);
+            byte data[9];
+            for (int i = 0; i < 9; i++) data[i] = ds.read();
+            int16_t raw = (data[1] << 8) | data[0];
+            current_temp = raw / 16.0f;
         }
+        last_temp_ms = millis();
+        converting = false;
     }
 }
 
@@ -76,25 +73,26 @@ void update_temp_async() {
 
 void setup() {
     Serial.begin(1000000);
-    start_time_us = micros(); // Mark the start to keep ts_us manageable
-    
+    start_time_us = micros();
+
     adc_continuous_handle_cfg_t hc = {
         .max_store_buf_size = 8192,
-        .conv_frame_size = 256,
+        .conv_frame_size = 256
     };
     adc_continuous_new_handle(&hc, &adc_handle);
 
-    static adc_digi_pattern_config_t pattern[3];
-    pattern[0] = {ADC_ATTEN_DB_11, ADC_CHANNEL_2, ADC_UNIT_1, ADC_BITWIDTH_12};
-    pattern[1] = {ADC_ATTEN_DB_11, ADC_CHANNEL_3, ADC_UNIT_1, ADC_BITWIDTH_12};
-    pattern[2] = {ADC_ATTEN_DB_11, ADC_CHANNEL_4, ADC_UNIT_1, ADC_BITWIDTH_12};
+    static adc_digi_pattern_config_t pattern[3] = {
+        {ADC_ATTEN_DB_11, ADC_CHANNEL_2, ADC_UNIT_1, ADC_BITWIDTH_12}, // audio
+        {ADC_ATTEN_DB_11, ADC_CHANNEL_3, ADC_UNIT_1, ADC_BITWIDTH_12}, // accel
+        {ADC_ATTEN_DB_11, ADC_CHANNEL_4, ADC_UNIT_1, ADC_BITWIDTH_12}  // CT
+    };
 
     adc_continuous_config_t cfg = {
         .pattern_num = 3,
         .adc_pattern = pattern,
         .sample_freq_hz = ADC_RATE_HZ,
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
-        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
+        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2
     };
 
     adc_continuous_config(adc_handle, &cfg);
@@ -104,49 +102,55 @@ void setup() {
 /* ================= LOOP ================= */
 
 void loop() {
+    update_temp_async();
+
     uint8_t buf[BUF_SIZE];
     uint32_t bytes_read;
 
-    // Handle DS18B20 without stopping the ADC processing
-    update_temp_async();
+    if (adc_continuous_read(adc_handle, buf, sizeof(buf), &bytes_read, 0) != ESP_OK)
+        return;
 
-    esp_err_t ret = adc_continuous_read(adc_handle, buf, sizeof(buf), &bytes_read, 0);
+    static bool have_audio = false, have_accel = false, have_ct = false;
+    static sample_t cur;
 
-    if (ret == ESP_OK && bytes_read > 0) {
-        int n = bytes_read / sizeof(adc_digi_output_data_t);
+    int n = bytes_read / sizeof(adc_digi_output_data_t);
 
-        for (int i = 0; i < n; i++) {
-            auto *d = (adc_digi_output_data_t*)&buf[i * sizeof(adc_digi_output_data_t)];
-            uint16_t val = d->type2.data & 0x0FFF;
-            float v = (val / ADC_MAX) * VREF;
+    for (int i = 0; i < n; i++) {
+        auto *d = (adc_digi_output_data_t*)&buf[i * sizeof(adc_digi_output_data_t)];
+        uint16_t val = d->type2.data & 0x0FFF;
+        float v = (val / ADC_MAX) * VREF;
 
-            if (d->type2.channel == ADC_CHANNEL_2) {
-                // Time relative to start_time_us to keep numbers small
-                sample_buf[sample_idx].ts_us = micros() - start_time_us;
-                sample_buf[sample_idx].audio_v = v;
-                sample_buf[sample_idx].temp_c = current_temp;
-                
-                sample_idx++;
-                if (sample_idx >= MAX_SAMPLES) {
-                    uint8_t marker = 0xAA;
-                    uint16_t count = sample_idx;
-                    Serial.write(&marker, 1);
-                    Serial.write((uint8_t*)&count, sizeof(count));
-                    Serial.write((uint8_t*)sample_buf, count * sizeof(sample_t));
-                    Serial.flush();
-                    sample_idx = 0;
-                }
-            }
-            else if (d->type2.channel == ADC_CHANNEL_3) {
-                sample_buf[sample_idx].accel_g = (v - ZERO_G_V) / MV_PER_G;
-            }
-            else if (d->type2.channel == ADC_CHANNEL_4) {
-                // Apply CT Offset and Floor at 0
-                if (val > CT_OFFSET) {
-                    sample_buf[sample_idx].ct_adc = val - CT_OFFSET;
-                } else {
-                    sample_buf[sample_idx].ct_adc = 0;
-                }
+        switch (d->type2.channel) {
+            case ADC_CHANNEL_2: // audio
+                cur.ts_us = micros() - start_time_us;
+                cur.audio_v = v;
+                cur.temp_c = current_temp;
+                have_audio = true;
+                break;
+
+            case ADC_CHANNEL_3: // accel
+                cur.accel_g = (v - ZERO_G_V) / MV_PER_G;
+                have_accel = true;
+                break;
+
+            case ADC_CHANNEL_4: // CT
+                cur.ct_adc = (val > CT_OFFSET) ? (val - CT_OFFSET) : 0;
+                have_ct = true;
+                break;
+        }
+
+        if (have_audio && have_accel && have_ct) {
+            sample_buf[sample_idx++] = cur;
+            have_audio = have_accel = have_ct = false;
+
+            if (sample_idx >= MAX_SAMPLES) {
+                uint8_t marker = 0xAA;
+                uint16_t count = sample_idx;
+                Serial.write(&marker, 1);
+                Serial.write((uint8_t*)&count, 2);
+                Serial.write((uint8_t*)sample_buf, count * sizeof(sample_t));
+                Serial.flush();
+                sample_idx = 0;
             }
         }
     }

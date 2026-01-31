@@ -1,0 +1,2 @@
+source /home/babumon/swadeshlabs/esp32/model/edgemodel/build/gdbinit/symbols
+source /home/babumon/swadeshlabs/esp32/model/edgemodel/build/gdbinit/connect

@@ -1,46 +1,42 @@
-import csv
+import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime
 
-def load_csv(fname):
-    adc = []
-    g = []
-    with open(fname, "r") as f:
-        reader = csv.reader(f)
-        next(reader)  # skip header
-        for row in reader:
-            adc.append(int(row[0]))
-            g.append(float(row[1]))
-    return adc, g
+def process_and_plot(file1, file2, start=0, end=1000):
+    # Load datasets
+    df1 = pd.read_csv(file1)
+    df2 = pd.read_csv(file2)
 
-# Load files
-adc_h, g_h = load_csv("healthy.csv")
-adc_f, g_f = load_csv("fault.csv")
+    # Slice data for the specified 1000 sample window
+    # Vibration: third from last (-3), Temperature: last (-1)
+    vib_1 = df1.iloc[start:end, -3]
+    temp_1 = df1.iloc[start:end, -1]
+    
+    vib_2 = df2.iloc[start:end, -3]
+    temp_2 = df2.iloc[start:end, -1]
 
-# Time axis
-fs = 10000.0
-t_h = [i / fs for i in range(len(g_h))]
-t_f = [i / fs for i in range(len(g_f))]
+    # Vibration Plot (Zoomed)
+    plt.figure(figsize=(12, 6))
+    plt.plot(vib_1.values, label='Healthy', alpha=0.8, color='blue')
+    plt.plot(vib_2.values, label='Faulty', alpha=0.8, color='red')
+    plt.title(f'Vibration Comparison (Samples {start}-{end})')
+    plt.xlabel('Sample Offset')
+    plt.ylabel('Acceleration (g)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('vibration_zoomed.png')
+    plt.close()
 
-# Plot
-T_START = 0.0
-T_END   = 0.1    # 100 ms window → stretches peaks
-plt.figure(figsize=(18, 4))
-plt.plot(t_h, g_h, label="Healthy", linewidth=1)
-plt.plot(t_f, g_f, label="Fault", linewidth=1)
+    # Temperature Plot (Zoomed)
+    plt.figure(figsize=(12, 6))
+    plt.plot(temp_1.values, label='Healthy', alpha=0.8, color='green')
+    plt.plot(temp_2.values, label='Faulty', alpha=0.8, color='orange')
+    plt.title(f'Temperature Comparison (Samples {start}-{end})')
+    plt.xlabel('Sample Offset')
+    plt.ylabel('Temperature (°C)')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('temperature_zoomed.png')
+    plt.close()
 
-plt.xlim(T_START, T_END)
-
-plt.xlabel("Time (s)")
-plt.ylabel("Acceleration (g)")
-plt.title("ADXL335 Vibration Comparison")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-
-# Save with timestam8
-ts = datetime.now().strftime("%H-%M-%S")
-plt.savefig(f"plot_time_{ts}.png", dpi=300)
-
-plt.show()
-
+if __name__ == "__main__":
+    process_and_plot('./healthy/esp32_21-53-55_batch_0.csv', './faulty/esp32_21-44-56_batch_0.csv', start=0, end=1000)
