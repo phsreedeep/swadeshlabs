@@ -3,7 +3,7 @@ import numpy as np
 from scipy.fft import rfft, rfftfreq
 from scipy.stats import kurtosis
 
-FS = 10000.0  # sampling rate (Hz)
+FS = 20000.0  # sampling rate (Hz)
 
 def load_g(fname):
     g = []
@@ -48,8 +48,8 @@ def analyze(g):
     }
 
 # ---- load data ----
-g_healthy = load_g("healthy.csv")
-g_faulty  = load_g("fault.csv")
+g_healthy = load_g("./healthy/esp32_21-28-27_batch_0.csv")
+g_faulty  = load_g("./faulty/esp32_21-35-41_batch_0.csv")
 
 res_h = analyze(g_healthy)
 res_f = analyze(g_faulty)
