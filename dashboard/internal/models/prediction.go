@@ -9,9 +9,10 @@ import (
 // PredictionLog stores ML inference results from the ESP32
 type PredictionLog struct {
 	gorm.Model
-	Label      string    `json:"label" gorm:"index"`
-	Confidence float64   `json:"confidence"`
-	Timestamp  time.Time `json:"timestamp" gorm:"index"`
+	Label         string    `json:"label" gorm:"index"`
+	Confidence    float64   `json:"confidence"`
+	Timestamp     time.Time `json:"timestamp" gorm:"index"`
+	DismissReason string    `json:"dismiss_reason"` // Track why alert was dismissed
 }
 
 // MLPayload represents the JSON structure from ESP32-S3
@@ -41,4 +42,19 @@ func (p *MLPayload) ToPredictionLog() *PredictionLog {
 		Confidence: p.Confidence,
 		Timestamp:  time.Now(),
 	}
+}
+
+// GetFlaggedSensors analyzes telemetry data and returns sensors that crossed thresholds
+func (p *MLPayload) GetFlaggedSensors() []string {
+	sensors := []string{}
+	if p.Telemetry.VibrationPeak > 2000 {
+		sensors = append(sensors, "Vibration Sensor")
+	}
+	if p.Telemetry.TemperatureC > 60 {
+		sensors = append(sensors, "Thermal Sensor")
+	}
+	if p.Telemetry.CurrentAmps > 2.0 {
+		sensors = append(sensors, "Current Sensor")
+	}
+	return sensors
 }

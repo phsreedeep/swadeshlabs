@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Button Test v2</title>
+    <style>
+        body {
+            background: #12121a;
+            color: white;
+            padding: 20px;
+            font-family: sans-serif;
+        }
+
+        .log {
+            background: #1a1a22;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .modal-footer {
+            margin: 20px 0;
+        }
+
+        .modal-footer-actions {
+            display: flex;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            color: white;
+            background: #3a3a45;
+        }
+
+        .btn-primary {
+            background: #00FF94;
+            color: black;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Dismiss Button Debug Test</h1>
+    <div id="log-area" class="log">
+        <strong>Console Log:</strong><br>
+        <span id="log"></span>
+    </div>
+
+    <div class="modal-footer">
+        <div id="modal-actions-default" class="modal-footer-actions">
+            <button id="dismiss-btn" class="btn">Dismiss Alert (addEventListener)</button>
+            <button class="btn btn-primary">Create Ticket</button>
+        </div>
+
+        <div id="modal-actions-dismiss" class="modal-footer-actions"
+            style="display: none; background: #2a2a35; padding: 10px; border-radius: 4px;">
+            <select id="reason-select"
+                style="flex-grow: 1; padding: 8px; background: #1a1a22; color: white; border: 1px solid #3a3a45; border-radius: 4px;">
+                <option value="">Select Reason</option>
+                <option value="False Alarm">False Alarm</option>
+                <option value="Other">Other</option>
+            </select>
+            <button id="cancel-btn" class="btn">Cancel</button>
+            <button class="btn btn-primary">Confirm</button>
+        </div>
+    </div>
+
+    <hr>
+    <h3>Instructions:</h3>
+    <ol>
+        <li>Click "Dismiss Alert" button above</li>
+        <li>Watch the log area and the button area</li>
+        <li>The dropdown should appear</li>
+    </ol>
+
+    <script>
+        const log = document.getElementById('log');
+
+        function addLog(message) {
+            console.log(message);
+            log.innerHTML += message + '<br>';
+        }
+
+        addLog('✓ Script loaded at ' + new Date().toLocaleTimeString());
+
+        // Get elements
+        const dismissBtn = document.getElementById('dismiss-btn');
+        const cancelBtn = document.getElementById('cancel-btn');
+        const defaultActions = document.getElementById('modal-actions-default');
+        const dismissActions = document.getElementById('modal-actions-dismiss');
+
+        addLog('✓ Elements found: dismiss-btn=' + !!dismissBtn + ', default=' + !!defaultActions + ', dismiss=' + !!dismissActions);
+
+        function toggleDismiss(show) {
+            addLog('→ toggleDismiss called with show=' + show);
+
+            if (defaultActions && dismissActions) {
+                if (show) {
+                    addLog('→ Setting display: default=none, dismiss=flex');
+                    defaultActions.style.display = 'none';
+                    dismissActions.style.display = 'flex';
+                    addLog('✓ Display changed. Actual: default=' + defaultActions.style.display + ', dismiss=' + dismissActions.style.display);
+                } else {
+                    addLog('→ Setting display: default=flex, dismiss=none');
+                    defaultActions.style.display = 'flex';
+                    dismissActions.style.display = 'none';
+                    addLog('✓ Display changed. Actual: default=' + defaultActions.style.display + ', dismiss=' + dismissActions.style.display);
+                }
+            } else {
+                addLog('✗ ERROR: Elements not found!');
+            }
+        }
+
+        // Add event listeners
+        if (dismissBtn) {
+            dismissBtn.addEventListener('click', function () {
+                addLog('✓ Dismiss button clicked!');
+                toggleDismiss(true);
+            });
+            addLog('✓ Click listener attached to dismiss button');
+        } else {
+            addLog('✗ ERROR: Could not find dismiss button!');
+        }
+
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function () {
+                addLog('✓ Cancel button clicked!');
+                toggleDismiss(false);
+            });
+            addLog('✓ Click listener attached to cancel button');
+        }
+
+        addLog('✓ Page fully initialized');
+    </script>
+</body>
+
+</html>

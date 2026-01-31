@@ -44,6 +44,7 @@ func SetupRoutes(e *echo.Echo, sseHub *SSEHub) {
 
 	// API endpoints
 	e.GET("/api/predictions", predictionsHandler)
+	e.POST("/api/alerts/:id/dismiss", dismissAlertHandler)
 }
 
 // indexHandler renders the main dashboard page
@@ -55,12 +56,12 @@ func indexHandler(c echo.Context) error {
 func statusCardHandler(c echo.Context) error {
 	label := c.QueryParam("label")
 	confidence := c.QueryParam("confidence")
-	
+
 	data := map[string]interface{}{
 		"Label":      label,
 		"Confidence": confidence,
 	}
-	
+
 	return c.Render(http.StatusOK, "status_card.html", data)
 }
 
@@ -68,12 +69,12 @@ func statusCardHandler(c echo.Context) error {
 func workOrderHandler(c echo.Context) error {
 	label := c.QueryParam("label")
 	confidence := c.QueryParam("confidence")
-	
+
 	data := map[string]interface{}{
 		"Label":      label,
 		"Confidence": confidence,
 	}
-	
+
 	return c.Render(http.StatusOK, "work_order_modal.html", data)
 }
 

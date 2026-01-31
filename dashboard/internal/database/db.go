@@ -51,3 +51,18 @@ func GetRecentPredictions(limit int) ([]models.PredictionLog, error) {
 	result := DB.Order("created_at desc").Limit(limit).Find(&logs)
 	return logs, result.Error
 }
+
+// UpdateDismissReason updates the dismiss_reason field for a given prediction log
+func UpdateDismissReason(id string, reason string) error {
+	result := DB.Model(&models.PredictionLog{}).Where("id = ?", id).Update("dismiss_reason", reason)
+	if result.Error != nil {
+		log.Printf("Failed to update dismiss reason: %v", result.Error)
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		log.Printf("No prediction log found with ID: %s", id)
+		return gorm.ErrRecordNotFound
+	}
+	log.Printf("Updated dismiss reason for alert #%s: %s", id, reason)
+	return nil
+}

@@ -836,6 +836,27 @@ body {
     font-family: 'JetBrains Mono', monospace;
 }
 
+/* Sensor Badges */
+.sensor-badges-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+}
+
+.sensor-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    background: rgba(239, 68, 68, 0.2);
+    color: var(--color-critical);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: var(--radius-md);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
 .modal-footer {
     display: flex;
     justify-content: flex-end;

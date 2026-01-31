@@ -17,6 +17,39 @@ const CONFIG = {
     CRITICAL_THRESHOLD: 0.85
 };
 
+// DEBUG LOGGER OVERRIDE
+(function () {
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    function appendLog(msg, color) {
+        const logEl = document.getElementById('debug-log');
+        if (logEl) {
+            const line = document.createElement('div');
+            line.style.color = color;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+
+    console.log = function (...args) {
+        originalLog.apply(console, args);
+        appendLog(args.join(' '), '#0f0');
+    };
+
+    console.error = function (...args) {
+        originalError.apply(console, args);
+        appendLog(args.join(' '), '#f00');
+    };
+
+    console.warn = function (...args) {
+        originalWarn.apply(console, args);
+        appendLog(args.join(' '), '#ff0');
+    };
+})();
+
 // ============================================
 // State Management
 // ============================================
@@ -26,7 +59,8 @@ let state = {
     predictionHistory: [],
     vibrationData: [],
     temperatureData: [],
-    workOrderShown: false
+    workOrderShown: false,
+    currentAlertId: null // Store current alert ID for dismiss API
 };
 
 // ============================================
@@ -46,22 +80,22 @@ let vibrationIntensity = 0;
 function init3DMotor() {
     const canvas = document.getElementById('motor-canvas');
     const container = canvas.parentElement;
-    
+
     // Scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x12121a);
-    
+
     // Camera
     camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.set(8, 5, 10);
-    
+
     // Renderer
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
+
     // Controls
     controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -69,20 +103,20 @@ function init3DMotor() {
     controls.minDistance = 8;
     controls.maxDistance = 20;
     controls.maxPolarAngle = Math.PI / 1.8;
-    
+
     // Lighting
     setupLighting();
-    
+
     // Create Motor
     createMotor();
-    
+
     // Grid helper
     const gridHelper = new THREE.GridHelper(20, 20, 0x333344, 0x222233);
     scene.add(gridHelper);
-    
+
     // Animation loop
     animate();
-    
+
     // Handle resize
     window.addEventListener('resize', onWindowResize);
 }
@@ -91,7 +125,7 @@ function setupLighting() {
     // Ambient light
     const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
     scene.add(ambientLight);
-    
+
     // Main directional light
     const mainLight = new THREE.DirectionalLight(0xffffff, 1);
     mainLight.position.set(10, 15, 10);
@@ -99,12 +133,12 @@ function setupLighting() {
     mainLight.shadow.mapSize.width = 2048;
     mainLight.shadow.mapSize.height = 2048;
     scene.add(mainLight);
-    
+
     // Fill light
     const fillLight = new THREE.DirectionalLight(0x6366f1, 0.3);
     fillLight.position.set(-10, 5, -10);
     scene.add(fillLight);
-    
+
     // Rim light
     const rimLight = new THREE.DirectionalLight(0x00FF94, 0.2);
     rimLight.position.set(0, -5, -10);
@@ -113,14 +147,14 @@ function setupLighting() {
 
 function createMotor() {
     motorGroup = new THREE.Group();
-    
+
     // Materials
     const bodyMaterial = new THREE.MeshStandardMaterial({
         color: 0x2a2a3a,
         metalness: 0.7,
         roughness: 0.3
     });
-    
+
     motorMaterial = new THREE.MeshStandardMaterial({
         color: 0x3a3a4a,
         metalness: 0.8,
@@ -128,19 +162,19 @@ function createMotor() {
         emissive: 0x00FF94,
         emissiveIntensity: 0.1
     });
-    
+
     const shaftMaterial = new THREE.MeshStandardMaterial({
         color: 0x888899,
         metalness: 0.9,
         roughness: 0.1
     });
-    
+
     const finMaterial = new THREE.MeshStandardMaterial({
         color: 0x4a4a5a,
         metalness: 0.6,
         roughness: 0.4
     });
-    
+
     // Main motor body (cylindrical)
     const bodyGeometry = new THREE.CylinderGeometry(1.8, 1.8, 4, 32);
     const motorBody = new THREE.Mesh(bodyGeometry, motorMaterial);
@@ -148,7 +182,7 @@ function createMotor() {
     motorBody.castShadow = true;
     motorBody.receiveShadow = true;
     motorGroup.add(motorBody);
-    
+
     // Cooling fins
     const finCount = 24;
     for (let i = 0; i < finCount; i++) {
@@ -161,7 +195,7 @@ function createMotor() {
         fin.castShadow = true;
         motorGroup.add(fin);
     }
-    
+
     // Front end bell
     const endBellGeometry = new THREE.CylinderGeometry(1.9, 1.7, 0.5, 32);
     const frontEndBell = new THREE.Mesh(endBellGeometry, bodyMaterial);
@@ -169,14 +203,14 @@ function createMotor() {
     frontEndBell.position.x = 2.2;
     frontEndBell.castShadow = true;
     motorGroup.add(frontEndBell);
-    
+
     // Rear end bell
     const rearEndBell = new THREE.Mesh(endBellGeometry, bodyMaterial);
     rearEndBell.rotation.z = Math.PI / 2;
     rearEndBell.position.x = -2.2;
     rearEndBell.castShadow = true;
     motorGroup.add(rearEndBell);
-    
+
     // Shaft
     shaftGroup = new THREE.Group();
     const shaftGeometry = new THREE.CylinderGeometry(0.2, 0.2, 5, 16);
@@ -184,15 +218,15 @@ function createMotor() {
     shaft.rotation.z = Math.PI / 2;
     shaft.castShadow = true;
     shaftGroup.add(shaft);
-    
+
     // Shaft keyway
     const keywayGeometry = new THREE.BoxGeometry(1.5, 0.08, 0.15);
     const keyway = new THREE.Mesh(keywayGeometry, shaftMaterial);
     keyway.position.set(1.8, 0.18, 0);
     shaftGroup.add(keyway);
-    
+
     motorGroup.add(shaftGroup);
-    
+
     // Fan housing (rear)
     const fanHousingGeometry = new THREE.CylinderGeometry(1.3, 1.5, 0.8, 32);
     const fanHousing = new THREE.Mesh(fanHousingGeometry, bodyMaterial);
@@ -200,14 +234,14 @@ function createMotor() {
     fanHousing.position.x = -2.8;
     fanHousing.castShadow = true;
     motorGroup.add(fanHousing);
-    
+
     // Fan cover (with grille pattern)
     const fanCoverGeometry = new THREE.TorusGeometry(1.1, 0.15, 8, 32);
     const fanCover = new THREE.Mesh(fanCoverGeometry, bodyMaterial);
     fanCover.rotation.y = Math.PI / 2;
     fanCover.position.x = -3.3;
     motorGroup.add(fanCover);
-    
+
     // Fan grille lines
     for (let i = 0; i < 8; i++) {
         const grilleGeometry = new THREE.CylinderGeometry(0.03, 0.03, 2.2, 8);
@@ -218,7 +252,7 @@ function createMotor() {
         grille.rotation.z = Math.PI / 2;
         motorGroup.add(grille);
     }
-    
+
     // Internal fan (rotating)
     fanGroup = new THREE.Group();
     const fanBladeCount = 6;
@@ -233,26 +267,26 @@ function createMotor() {
     }
     fanGroup.position.x = -2.9;
     motorGroup.add(fanGroup);
-    
+
     // Terminal box
     const terminalBoxGeometry = new THREE.BoxGeometry(1.2, 0.8, 1);
     const terminalBox = new THREE.Mesh(terminalBoxGeometry, bodyMaterial);
     terminalBox.position.set(0, 2.2, 0);
     terminalBox.castShadow = true;
     motorGroup.add(terminalBox);
-    
+
     // Terminal box lid
     const lidGeometry = new THREE.BoxGeometry(1.0, 0.1, 0.8);
     const lid = new THREE.Mesh(lidGeometry, finMaterial);
     lid.position.set(0, 2.65, 0);
     motorGroup.add(lid);
-    
+
     // Conduit fitting
     const conduitGeometry = new THREE.CylinderGeometry(0.15, 0.15, 0.4, 16);
     const conduit = new THREE.Mesh(conduitGeometry, shaftMaterial);
     conduit.position.set(0, 2.8, 0);
     motorGroup.add(conduit);
-    
+
     // Mounting feet
     const footGeometry = new THREE.BoxGeometry(1.2, 0.3, 1.5);
     const leftFoot = new THREE.Mesh(footGeometry, bodyMaterial);
@@ -260,26 +294,26 @@ function createMotor() {
     leftFoot.castShadow = true;
     leftFoot.receiveShadow = true;
     motorGroup.add(leftFoot);
-    
+
     const rightFoot = new THREE.Mesh(footGeometry, bodyMaterial);
     rightFoot.position.set(1.3, -2, 0);
     rightFoot.castShadow = true;
     rightFoot.receiveShadow = true;
     motorGroup.add(rightFoot);
-    
+
     // Mounting holes
     const holeGeometry = new THREE.CylinderGeometry(0.12, 0.12, 0.35, 16);
     const holeMaterial = new THREE.MeshStandardMaterial({ color: 0x111111 });
-    
+
     [[-1.3, -0.5], [-1.3, 0.5], [1.3, -0.5], [1.3, 0.5]].forEach(([x, z]) => {
         const hole = new THREE.Mesh(holeGeometry, holeMaterial);
         hole.position.set(x, -2.1, z);
         motorGroup.add(hole);
     });
-    
+
     // Nameplate
     const nameplateGeometry = new THREE.BoxGeometry(1.5, 0.02, 0.8);
-    const nameplateMaterial = new THREE.MeshStandardMaterial({ 
+    const nameplateMaterial = new THREE.MeshStandardMaterial({
         color: 0xcccccc,
         metalness: 0.8,
         roughness: 0.2
@@ -288,7 +322,7 @@ function createMotor() {
     nameplate.position.set(0, 1.81, 0.8);
     nameplate.rotation.x = -0.1;
     motorGroup.add(nameplate);
-    
+
     // Bearing housings (visible rings)
     const bearingGeometry = new THREE.TorusGeometry(0.35, 0.08, 8, 32);
     const bearingMaterial = new THREE.MeshStandardMaterial({
@@ -296,28 +330,28 @@ function createMotor() {
         metalness: 0.9,
         roughness: 0.1
     });
-    
+
     const frontBearing = new THREE.Mesh(bearingGeometry, bearingMaterial);
     frontBearing.rotation.y = Math.PI / 2;
     frontBearing.position.x = 2.45;
     motorGroup.add(frontBearing);
-    
+
     const rearBearing = new THREE.Mesh(bearingGeometry, bearingMaterial);
     rearBearing.rotation.y = Math.PI / 2;
     rearBearing.position.x = -2.45;
     motorGroup.add(rearBearing);
-    
+
     // Status indicator light
     const indicatorGeometry = new THREE.SphereGeometry(0.1, 16, 16);
     glowMaterial = new THREE.MeshBasicMaterial({ color: 0x00FF94 });
     const indicator = new THREE.Mesh(indicatorGeometry, glowMaterial);
     indicator.position.set(0.4, 2.65, 0.35);
     motorGroup.add(indicator);
-    
+
     // Position the motor group
     motorGroup.position.y = 2;
     scene.add(motorGroup);
-    
+
     // Add base platform
     const platformGeometry = new THREE.BoxGeometry(6, 0.2, 3);
     const platformMaterial = new THREE.MeshStandardMaterial({
@@ -333,7 +367,7 @@ function createMotor() {
 
 function animate() {
     requestAnimationFrame(animate);
-    
+
     // Rotate shaft and fan
     if (shaftGroup) {
         shaftGroup.rotation.x += rotationSpeed;
@@ -341,13 +375,13 @@ function animate() {
     if (fanGroup) {
         fanGroup.rotation.x += rotationSpeed * 2;
     }
-    
+
     // Apply vibration effect
     if (motorGroup && vibrationIntensity > 0) {
         motorGroup.position.y = 2 + (Math.random() - 0.5) * vibrationIntensity * 0.05;
         motorGroup.position.x = (Math.random() - 0.5) * vibrationIntensity * 0.02;
     }
-    
+
     // Smooth color transition
     currentColor.lerp(targetColor, 0.05);
     if (motorMaterial) {
@@ -356,7 +390,7 @@ function animate() {
     if (glowMaterial) {
         glowMaterial.color.copy(currentColor);
     }
-    
+
     controls.update();
     renderer.render(scene, camera);
 }
@@ -387,16 +421,16 @@ function updateMotor3D(label, confidence) {
             rotationSpeed = 0.01;
             break;
     }
-    
+
     // Update emissive intensity based on confidence
     if (motorMaterial) {
         motorMaterial.emissiveIntensity = 0.1 + (confidence * 0.3);
     }
-    
+
     // Update status ring
     const statusRing = document.getElementById('status-ring');
     statusRing.classList.remove('healthy', 'unbalance', 'fault');
-    
+
     switch (label) {
         case 'healthy':
             statusRing.classList.add('healthy');
@@ -496,35 +530,48 @@ function initCharts() {
 // ============================================
 function connectSSE() {
     console.log('[SSE] Connecting to', CONFIG.SSE_ENDPOINT);
-    
-    const eventSource = new EventSource(CONFIG.SSE_ENDPOINT);
-    
+
+    // Use absolute URL just in case
+    const eventSource = new EventSource(window.location.protocol + '//' + window.location.host + CONFIG.SSE_ENDPOINT);
+
+    // Connection timeout check (5 seconds)
+    const connectionTimeout = setTimeout(() => {
+        if (eventSource.readyState === EventSource.CONNECTING) {
+            console.warn('[SSE] Connection taking too long.');
+            alert("⚠️ Connection Issue Detected!\n\nIt seems the live data connection is blocked.\n\nOnly 6 tabs can be open at once. Please CLOSE other tabs pointing to localhost and refresh this page.");
+            eventSource.close();
+            updateConnectionStatus(false);
+        }
+    }, 5000);
+
     eventSource.onopen = () => {
+        clearTimeout(connectionTimeout);
         console.log('[SSE] Connected');
         updateConnectionStatus(true);
     };
-    
+
     eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            
+
             // Skip connection acknowledgment
             if (data.type === 'connected') {
                 console.log('[SSE] Server acknowledged connection');
                 return;
             }
-            
+
             // Process ML payload
             handleMLPayload(data);
         } catch (err) {
             console.error('[SSE] Parse error:', err);
         }
     };
-    
+
     eventSource.onerror = (err) => {
+        clearTimeout(connectionTimeout);
         console.error('[SSE] Connection error:', err);
         updateConnectionStatus(false);
-        
+
         // Reconnect after 3 seconds
         setTimeout(() => {
             console.log('[SSE] Attempting reconnection...');
@@ -539,7 +586,7 @@ function updateConnectionStatus(connected) {
     const badge = document.getElementById('connection-status');
     const statusText = badge.querySelector('.status-text');
     const aiIndicator = document.getElementById('ai-indicator');
-    
+
     if (connected) {
         badge.classList.add('connected');
         statusText.textContent = 'Online';
@@ -556,11 +603,11 @@ function updateSystemTime() {
     const timeEl = document.getElementById('system-time');
     if (timeEl) {
         const now = new Date();
-        timeEl.textContent = now.toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit' 
+        timeEl.textContent = now.toLocaleTimeString('en-US', {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
         });
     }
 }
@@ -572,7 +619,7 @@ setInterval(updateSystemTime, 1000);
 function handleMLPayload(payload) {
     console.log('[ML] Received:', payload);
     state.lastPayload = payload;
-    
+
     // Update all UI components
     updateConfidenceMeter(payload.confidence);
     updateMotorStatus(payload.ml_label);
@@ -581,7 +628,7 @@ function handleMLPayload(payload) {
     updateCharts(payload.telemetry);
     updateAnomalyScore(payload.anomaly_score);
     addToPredictionHistory(payload);
-    
+
     // Check for critical fault
     checkCriticalFault(payload);
 }
@@ -595,10 +642,10 @@ function updateConfidenceMeter(confidence) {
     const percentage = Math.round(confidence * 100);
     const bar = document.getElementById('confidence-bar');
     const value = document.getElementById('confidence-value');
-    
+
     bar.style.width = `${percentage}%`;
     value.textContent = percentage;
-    
+
     // Update bar color based on confidence
     bar.classList.remove('warning', 'danger');
     if (percentage > 95) {
@@ -611,14 +658,14 @@ function updateConfidenceMeter(confidence) {
 // Motor Status & 3D Color
 function updateMotorStatus(label) {
     const statusLabel = document.querySelector('.status-label');
-    
+
     // Remove all classes
     statusLabel.classList.remove('healthy', 'unbalance', 'fault');
-    
+
     // Apply new class based on label
     let displayLabel = 'UNKNOWN';
     let className = '';
-    
+
     switch (label) {
         case 'healthy':
             displayLabel = 'HEALTHY';
@@ -633,15 +680,15 @@ function updateMotorStatus(label) {
             className = 'fault';
             break;
     }
-    
+
     statusLabel.classList.add(className);
     statusLabel.textContent = displayLabel;
-    
+
     // Update 3D motor
     if (state.lastPayload) {
         updateMotor3D(label, state.lastPayload.confidence);
     }
-    
+
     // Update RPM display based on status
     const rpmDisplay = document.getElementById('motor-rpm');
     if (rpmDisplay) {
@@ -666,15 +713,15 @@ function updateAIStatusCard(payload) {
     const explanation = document.getElementById('ai-explanation');
     const confidenceBadge = document.getElementById('confidence-badge');
     const anomalyBadge = document.getElementById('anomaly-badge');
-    
+
     // Remove all classes
     predictionLabel.classList.remove('success', 'warning', 'danger');
-    
+
     let displayLabel = payload.ml_label.toUpperCase().replace('_', ' ');
     let className = '';
     let explanationText = '';
     let badgeText = '';
-    
+
     switch (payload.ml_label) {
         case 'healthy':
             className = 'success';
@@ -692,17 +739,17 @@ function updateAIStatusCard(payload) {
             badgeText = 'CRITICAL';
             break;
     }
-    
+
     predictionLabel.textContent = displayLabel;
     predictionLabel.classList.add(className);
     sublabel.textContent = `Confidence: ${Math.round(payload.confidence * 100)}%`;
     explanation.innerHTML = `<p>${explanationText}</p>`;
-    
+
     if (confidenceBadge) {
         confidenceBadge.textContent = badgeText;
         confidenceBadge.className = 'card-badge ' + (className === 'danger' ? 'critical' : className);
     }
-    
+
     // Update anomaly badge
     if (anomalyBadge) {
         const anomaly = payload.anomaly_score;
@@ -729,33 +776,33 @@ function updateTelemetry(telemetry) {
 // Charts
 function updateCharts(telemetry) {
     const timestamp = new Date().toLocaleTimeString();
-    
+
     // Update vibration data
     state.vibrationData.push(telemetry.vibration_peak);
     if (state.vibrationData.length > CONFIG.CHART_MAX_POINTS) {
         state.vibrationData.shift();
     }
-    
+
     // Update temperature data
     state.temperatureData.push(telemetry.temperature_c);
     if (state.temperatureData.length > CONFIG.CHART_MAX_POINTS) {
         state.temperatureData.shift();
     }
-    
+
     // Update chart labels
     const labels = state.vibrationData.map((_, i) => '');
-    
+
     // Update vibration chart
     vibrationChart.data.labels = labels;
     vibrationChart.data.datasets[0].data = state.vibrationData;
-    
+
     // Change color based on current state
     const color = CONFIG.COLORS[state.lastPayload?.ml_label] || CONFIG.COLORS.healthy;
     vibrationChart.data.datasets[0].borderColor = color;
     vibrationChart.data.datasets[0].backgroundColor = color.replace(')', ', 0.1)').replace('rgb', 'rgba');
-    
+
     vibrationChart.update('none');
-    
+
     // Update temperature chart
     temperatureChart.data.labels = labels;
     temperatureChart.data.datasets[0].data = state.temperatureData;
@@ -775,50 +822,50 @@ let eventCounter = 0;
 function addToPredictionHistory(payload) {
     const history = document.getElementById('prediction-history');
     const eventCountEl = document.getElementById('event-count');
-    
+
     // Remove placeholder if exists
     const placeholder = history.querySelector('.placeholder');
     if (placeholder) {
         placeholder.remove();
     }
-    
+
     // Increment counter
     eventCounter++;
     if (eventCountEl) {
         eventCountEl.textContent = eventCounter;
     }
-    
+
     // Create history item
     const item = document.createElement('div');
     item.className = 'history-item';
-    
+
     let labelClass = '';
     switch (payload.ml_label) {
         case 'healthy': labelClass = 'healthy'; break;
         case 'unbalance': labelClass = 'unbalance'; break;
         case 'bearing_fault': labelClass = 'fault'; break;
     }
-    
-    const time = new Date().toLocaleTimeString('en-US', { 
-        hour12: false, 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit' 
+
+    const time = new Date().toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
     });
-    
+
     item.innerHTML = `
         <span class="label ${labelClass}">${payload.ml_label.replace('_', ' ')}</span>
         <span class="confidence">${Math.round(payload.confidence * 100)}% | ${time}</span>
     `;
-    
+
     // Add to beginning
     history.insertBefore(item, history.firstChild);
-    
+
     // Keep only last 10
     while (history.children.length > 10) {
         history.removeChild(history.lastChild);
     }
-    
+
     // Store in state
     state.predictionHistory.unshift(payload);
     if (state.predictionHistory.length > 50) {
@@ -831,28 +878,80 @@ function addToPredictionHistory(payload) {
 // ============================================
 function checkCriticalFault(payload) {
     // Only show if bearing_fault AND confidence > 85% AND not already shown
-    if (payload.ml_label === 'bearing_fault' && 
-        payload.confidence > CONFIG.CRITICAL_THRESHOLD && 
+    if (payload.ml_label === 'bearing_fault' &&
+        payload.confidence > CONFIG.CRITICAL_THRESHOLD &&
         !state.workOrderShown) {
-        
-        console.log('[ALERT] Critical fault detected! Opening work order...');
-        showWorkOrderModal(payload);
+
+        console.log('[ALERT] Critical fault detected! Fetching alert ID...');
+
+        // Fetch the most recent alert ID from the backend
+        fetch('/api/predictions')
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                    // Get the most recent prediction (it was just logged)
+                    const latestAlert = data[0];
+                    state.currentAlertId = latestAlert.ID;
+                    console.log('[ALERT] Alert ID:', state.currentAlertId);
+                }
+                showWorkOrderModal(payload);
+            })
+            .catch(error => {
+                console.error('[ALERT] Failed to fetch alert ID:', error);
+                // Show modal anyway, just won't be able to dismiss to backend
+                showWorkOrderModal(payload);
+            });
     }
 }
 
 function showWorkOrderModal(payload) {
     state.workOrderShown = true;
-    
+
     const modal = document.getElementById('work-order-modal');
-    
+
     // Update modal content
     document.getElementById('modal-label').textContent = payload.ml_label.toUpperCase().replace('_', ' ');
     document.getElementById('modal-confidence').textContent = `${Math.round(payload.confidence * 100)}%`;
     document.getElementById('modal-timestamp').textContent = new Date().toLocaleString();
-    
+
+    // Calculate flagged sensors using production thresholds
+    const sensorsTriggered = [];
+    if (payload.telemetry.vibration_peak > 2000) {
+        sensorsTriggered.push("Vibration Sensor");
+    }
+    if (payload.telemetry.temperature_c > 60) {
+        sensorsTriggered.push("Thermal Sensor");
+    }
+    if (payload.telemetry.current_amps > 2.0) {
+        sensorsTriggered.push("Current Sensor");
+    }
+
+    // Default fallback
+    if (sensorsTriggered.length === 0) {
+        sensorsTriggered.push("Unknown Source");
+    }
+
+    // Update sensors text
+    const sensorEl = document.getElementById('modal-sensors');
+    if (sensorEl) {
+        sensorEl.textContent = sensorsTriggered.join(", ");
+    }
+
+    // Update sensor badges container
+    const badgesEl = document.getElementById('sensor-badges');
+    if (badgesEl) {
+        badgesEl.innerHTML = sensorsTriggered.map(sensor =>
+            `<span class="sensor-badge">${sensor}</span>`
+        ).join('');
+    }
+
+    // Reset dismiss options
+    const dismissOptions = document.getElementById('dismiss-options');
+    if (dismissOptions) dismissOptions.style.display = 'none';
+
     // Show modal
     modal.classList.add('active');
-    
+
     // Play alert sound (optional)
     playAlertSound();
 }
@@ -860,17 +959,51 @@ function showWorkOrderModal(payload) {
 function closeWorkOrderModal() {
     const modal = document.getElementById('work-order-modal');
     modal.classList.remove('active');
-    
+
     // Reset after 30 seconds to allow re-triggering
     setTimeout(() => {
         state.workOrderShown = false;
     }, 30000);
 }
 
+function dismissWithReason(selectElement) {
+    const reason = selectElement.value;
+
+    // Ignore if user just clicked without selecting
+    if (!reason) return;
+
+    console.log(`[Dismiss] Alert dismissed. Reason: ${reason}`);
+
+    // If we have a current alert ID, send to backend
+    if (state.currentAlertId) {
+        fetch(`/api/alerts/${state.currentAlertId}/dismiss`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ reason: reason })
+        })
+            .then(response => response.json())
+            .then(data => {
+                console.log('[Dismiss] Server response:', data);
+            })
+            .catch(error => {
+                console.error('[Dismiss] Error:', error);
+            });
+    }
+
+    // Reset dropdown
+    selectElement.value = '';
+
+    // Close the modal
+    closeWorkOrderModal();
+}
+
+
 function acknowledgeWorkOrder() {
     console.log('[WORK ORDER] Acknowledged by operator');
     closeWorkOrderModal();
-    
+
     // Here you could make an API call to create a ticket
     // fetch('/api/work-orders', { method: 'POST', ... })
 }
@@ -881,14 +1014,14 @@ function playAlertSound() {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
-        
+
         oscillator.connect(gainNode);
         gainNode.connect(audioContext.destination);
-        
+
         oscillator.frequency.value = 800;
         oscillator.type = 'sine';
         gainNode.gain.value = 0.3;
-        
+
         oscillator.start();
         oscillator.stop(audioContext.currentTime + 0.3);
     } catch (e) {
@@ -899,24 +1032,63 @@ function playAlertSound() {
 // Make modal functions globally available
 window.closeWorkOrderModal = closeWorkOrderModal;
 window.acknowledgeWorkOrder = acknowledgeWorkOrder;
+window.handleDismissClick = handleDismissClick;
+window.confirmDismiss = confirmDismiss;
+window.showWorkOrderModal = showWorkOrderModal;
 
+// ============================================
 // ============================================
 // Initialization
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[Swadesh Labs] Initializing dashboard...');
-    
-    // Initialize system time
-    updateSystemTime();
-    
-    // Initialize 3D Motor
-    init3DMotor();
-    
-    // Initialize charts
-    initCharts();
-    
-    // Connect to SSE
-    connectSSE();
-    
+    window.logToScreen && window.logToScreen('DOM Loaded. Starting init sequence...', '#0ff');
+
+    // 1. Connect to SSE first (Priority)
+    try {
+        connectSSE();
+        window.logToScreen && window.logToScreen('SSE connection initiated.', '#0f0');
+    } catch (e) {
+        console.error('Failed to connect SSE:', e);
+        window.logToScreen && window.logToScreen('FATAL: SSE connection failed: ' + e.message, '#f00');
+    }
+
+    // 2. Initialize system time
+    try {
+        updateSystemTime();
+    } catch (e) {
+        console.error('Time init failed', e);
+    }
+
+    // 3. Initialize 3D Motor (Often fails if THREE not loaded)
+    try {
+        if (typeof THREE !== 'undefined') {
+            init3DMotor();
+            window.logToScreen && window.logToScreen('3D Motor initialized.', '#0f0');
+        } else {
+            throw new Error("THREE.js library not found");
+        }
+    } catch (e) {
+        console.error('Failed to initialize 3D Motor:', e);
+        window.logToScreen && window.logToScreen('WARNING: 3D Motor failed: ' + e.message, '#ff0');
+        // Hide container if failed
+        const container = document.getElementById('motor-container');
+        if (container) container.innerHTML = '<div style="padding:20px;color:#666">3D Visualization Unavailable</div>';
+    }
+
+    // 4. Initialize charts (Often fails if Chart not loaded)
+    try {
+        if (typeof Chart !== 'undefined') {
+            initCharts();
+            window.logToScreen && window.logToScreen('Charts initialized.', '#0f0');
+        } else {
+            throw new Error("Chart.js library not found");
+        }
+    } catch (e) {
+        console.error('Failed to initialize Charts:', e);
+        window.logToScreen && window.logToScreen('WARNING: Charts failed: ' + e.message, '#ff0');
+    }
+
     console.log('[Swadesh Labs] Dashboard ready');
+    window.logToScreen && window.logToScreen('Dashboard initialization complete.', '#0f0');
 });

@@ -8,11 +8,11 @@
         <strong>⚠️ CRITICAL FAULT DETECTED</strong>
         <p>AI has detected a bearing fault with {{.Confidence}}% confidence.</p>
     </div>
-    
+
     <div class="work-order-details">
         <h4>Diagnosis</h4>
         <p>AI detected spectral signature of Inner Race Defect (BPFI frequency).</p>
-        
+
         <h4>Recommended Actions</h4>
         <ol>
             <li>Isolate motor from power supply</li>
@@ -21,22 +21,48 @@
             <li>Replace bearing if necessary (SKU: BRG-6205-2RS)</li>
             <li>Document repair and update maintenance log</li>
         </ol>
-        
+
         <h4>Detection Details</h4>
         <table class="details-table">
             <tr>
                 <td>ML Label:</td>
-                <td>{{.Label}}</td>
+                <td><span id="modal-label">{{.Label}}</span></td>
             </tr>
             <tr>
                 <td>Confidence:</td>
-                <td>{{.Confidence}}%</td>
+                <td><span id="modal-confidence">{{.Confidence}}%</span></td>
+            </tr>
+            <tr>
+                <td>Flagged Sensors:</td>
+                <td id="modal-sensors">--</td>
             </tr>
         </table>
     </div>
+
+    <!-- Dismissal Options (Hidden by default) -->
+    <div id="dismiss-options" class="dismiss-options"
+        style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+        <h5 style="margin-top: 0; color: #aaa;">Reason for Dismissal:</h5>
+        <div class="form-group">
+            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
+                <input type="radio" name="dismiss-reason" value="False Alarm"> False Alarm
+            </label>
+            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
+                <input type="radio" name="dismiss-reason" value="Maintenance Scheduled"> Maintenance Scheduled
+            </label>
+            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
+                <input type="radio" name="dismiss-reason" value="Testing / Simulation"> Testing / Simulation
+            </label>
+            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
+                <input type="radio" name="dismiss-reason" value="Issue Resolved"> Issue Resolved
+            </label>
+        </div>
+        <button class="btn btn-secondary" onclick="confirmDismiss()" style="width: 100%; margin-top: 0.5rem;">Confirm
+            Dismiss</button>
+    </div>
 </div>
 <div class="modal-footer">
-    <button class="btn btn-secondary" onclick="closeWorkOrderModal()">Dismiss</button>
+    <button class="btn btn-secondary" onclick="handleDismissClick()">Dismiss Alert</button>
     <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">Acknowledge & Create Ticket</button>
 </div>
 {{end}}

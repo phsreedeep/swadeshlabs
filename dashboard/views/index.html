@@ -1,29 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Swadesh Labs - AI Predictive Maintenance</title>
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+
     <!-- Styles -->
     <link rel="stylesheet" href="/public/css/style.css?v=3">
-    
+
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    
+
     <!-- Three.js for 3D Motor -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script>
     <script>
         // OrbitControls inline for compatibility
-        THREE.OrbitControls = function(object, domElement) {
+        THREE.OrbitControls = function (object, domElement) {
             this.object = object;
             this.domElement = domElement;
             this.enabled = true;
@@ -34,7 +37,7 @@
             this.maxPolarAngle = Math.PI;
             this.enableDamping = false;
             this.dampingFactor = 0.05;
-            
+
             var scope = this;
             var spherical = new THREE.Spherical();
             var sphericalDelta = new THREE.Spherical();
@@ -51,19 +54,19 @@
             var dollyDelta = new THREE.Vector2();
             var STATE = { NONE: -1, ROTATE: 0, DOLLY: 1, PAN: 2 };
             var state = STATE.NONE;
-            
-            this.update = function() {
+
+            this.update = function () {
                 var offset = new THREE.Vector3();
                 var quat = new THREE.Quaternion().setFromUnitVectors(object.up, new THREE.Vector3(0, 1, 0));
                 var quatInverse = quat.clone().invert();
                 var lastPosition = new THREE.Vector3();
-                
+
                 return function update() {
                     var position = scope.object.position;
                     offset.copy(position).sub(scope.target);
                     offset.applyQuaternion(quat);
                     spherical.setFromVector3(offset);
-                    
+
                     if (scope.enableDamping) {
                         spherical.theta += sphericalDelta.theta * scope.dampingFactor;
                         spherical.phi += sphericalDelta.phi * scope.dampingFactor;
@@ -71,25 +74,25 @@
                         spherical.theta += sphericalDelta.theta;
                         spherical.phi += sphericalDelta.phi;
                     }
-                    
+
                     spherical.phi = Math.max(scope.minPolarAngle, Math.min(scope.maxPolarAngle, spherical.phi));
                     spherical.radius *= scale;
                     spherical.radius = Math.max(scope.minDistance, Math.min(scope.maxDistance, spherical.radius));
                     scope.target.add(panOffset);
-                    
+
                     offset.setFromSpherical(spherical);
                     offset.applyQuaternion(quatInverse);
                     position.copy(scope.target).add(offset);
                     scope.object.lookAt(scope.target);
-                    
+
                     sphericalDelta.set(0, 0, 0);
                     panOffset.set(0, 0, 0);
                     scale = 1;
-                    
+
                     return false;
                 };
             }();
-            
+
             function onMouseDown(event) {
                 if (!scope.enabled) return;
                 event.preventDefault();
@@ -103,7 +106,7 @@
                 document.addEventListener('mousemove', onMouseMove, false);
                 document.addEventListener('mouseup', onMouseUp, false);
             }
-            
+
             function onMouseMove(event) {
                 if (!scope.enabled) return;
                 event.preventDefault();
@@ -121,13 +124,13 @@
                 }
                 scope.update();
             }
-            
+
             function onMouseUp() {
                 state = STATE.NONE;
                 document.removeEventListener('mousemove', onMouseMove, false);
                 document.removeEventListener('mouseup', onMouseUp, false);
             }
-            
+
             function onMouseWheel(event) {
                 if (!scope.enabled) return;
                 event.preventDefault();
@@ -138,21 +141,68 @@
                 }
                 scope.update();
             }
-            
+
             this.domElement.addEventListener('mousedown', onMouseDown, false);
             this.domElement.addEventListener('wheel', onMouseWheel, { passive: false });
-            this.domElement.addEventListener('contextmenu', function(e) { e.preventDefault(); }, false);
+            this.domElement.addEventListener('contextmenu', function (e) { e.preventDefault(); }, false);
             this.update();
         };
     </script>
 </head>
+
 <body>
+    <!-- ROBUST DEBUG LOGGER -->
+    <div id="debug-log"
+        style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.95); color: #0f0; font-family: monospace; font-size: 14px; padding: 10px; height: 150px; overflow-y: auto; z-index: 10000; border-bottom: 2px solid #333; pointer-events: none;">
+        <strong>SYSTEM LOG (Autoscroll):</strong><br>
+    </div>
+    <script>
+        window.logToScreen = function (msg, color = '#0f0') {
+            const el = document.getElementById('debug-log');
+            if (el) {
+                const line = document.createElement('div');
+                line.style.color = color;
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                el.appendChild(line);
+                el.scrollTop = el.scrollHeight;
+            }
+        };
+        window.onerror = function (msg, url, line, col, error) {
+            window.logToScreen(`ERROR: ${msg} (${line}:${col})`, '#ff0000');
+            return false;
+        };
+        window.logToScreen('Logger initialized.', '#fff');
+    </script>
+    <!-- ROBUST DEBUG LOGGER -->
+    <div id="debug-log"
+        style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.95); color: #0f0; font-family: monospace; font-size: 14px; padding: 10px; height: 150px; overflow-y: auto; z-index: 10000; border-bottom: 2px solid #333; pointer-events: none;">
+        <strong>SYSTEM LOG (Autoscroll):</strong><br>
+    </div>
+    <script>
+        window.logToScreen = function (msg, color = '#0f0') {
+            const el = document.getElementById('debug-log');
+            if (el) {
+                const line = document.createElement('div');
+                line.style.color = color;
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                el.appendChild(line);
+                el.scrollTop = el.scrollHeight;
+            }
+        };
+        window.onerror = function (msg, url, line, col, error) {
+            window.logToScreen(`ERROR: ${msg} (${line}:${col})`, '#ff0000');
+            return false;
+        };
+        window.logToScreen('Logger initialized.', '#fff');
+    </script>
+
     <!-- Header -->
     <header class="header">
         <div class="header-brand">
             <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                <circle cx="12" cy="12" r="3" />
+                <path
+                    d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83" />
             </svg>
             <div>
                 <h1>SWADESH LABS</h1>
@@ -249,16 +299,16 @@
                 <!-- 3D Motor Visualization using Three.js -->
                 <div class="motor-3d" id="motor-3d">
                     <canvas id="motor-canvas"></canvas>
-                    
+
                     <!-- Status Glow Ring -->
                     <div class="status-ring" id="status-ring"></div>
                 </div>
-                
+
                 <!-- Motor Status Label -->
                 <div class="motor-status" id="motor-status">
                     <span class="status-label">INITIALIZING</span>
                 </div>
-                
+
                 <!-- Motor Info Panel -->
                 <div class="motor-info">
                     <div class="info-item">
@@ -334,7 +384,7 @@
                 </div>
                 <button class="modal-close" onclick="closeWorkOrderModal()" aria-label="Close">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 6L6 18M6 6l12 12"/>
+                        <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
                 </button>
             </div>
@@ -342,8 +392,10 @@
                 <div class="alert alert-critical">
                     <div class="alert-icon">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                            <path
+                                d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                            <line x1="12" y1="9" x2="12" y2="13" />
+                            <line x1="12" y1="17" x2="12.01" y2="17" />
                         </svg>
                     </div>
                     <div class="alert-content">
@@ -351,13 +403,19 @@
                         <p>AI system has identified a bearing anomaly requiring immediate attention.</p>
                     </div>
                 </div>
-                
+
                 <div class="work-order-details">
                     <div class="detail-section">
                         <h4>Diagnosis</h4>
-                        <p id="modal-diagnosis">Spectral analysis indicates Inner Race Defect (BPFI frequency signature detected). Bearing degradation pattern consistent with fatigue failure mode.</p>
+                        <p id="modal-diagnosis">Spectral analysis indicates Inner Race Defect (BPFI frequency signature
+                            detected). Bearing degradation pattern consistent with fatigue failure mode.</p>
                     </div>
-                    
+
+                    <div class="detail-section">
+                        <h4>Detected By Sources</h4>
+                        <div id="sensor-badges" class="sensor-badges-container"></div>
+                    </div>
+
                     <div class="detail-section">
                         <h4>Recommended Actions</h4>
                         <ol class="action-list">
@@ -368,7 +426,7 @@
                             <li><span class="action-num">5</span>Complete maintenance documentation</li>
                         </ol>
                     </div>
-                    
+
                     <div class="detail-section">
                         <h4>Detection Parameters</h4>
                         <div class="params-grid">
@@ -392,19 +450,28 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button class="btn btn-secondary" onclick="closeWorkOrderModal()">Dismiss Alert</button>
-                <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">
-                    <span>Create Maintenance Ticket</span>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M5 12h14M12 5l7 7-7 7"/>
-                    </svg>
-                </button>
-            </div>
         </div>
+    </div>
+    <div class="modal-footer">
+        <select class="btn btn-secondary" onchange="dismissWithReason(this)" style="cursor: pointer; appearance: auto;">
+            <option value="">Dismiss Alert</option>
+            <option value="Maintenance Completed">Maintenance Completed</option>
+            <option value="System Test">System Test</option>
+            <option value="Other">Other</option>
+        </select>
+        <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">
+            <span>Create Maintenance Ticket</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+        </button>
+    </div>
+    </div>
     </div>
 
     <!-- JavaScript -->
-    <script src="/public/js/app.js?v=3"></script>
+    <script src="/public/js/app.js?v=4"></script>
+
 </body>
+
 </html>
