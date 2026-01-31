@@ -151,50 +151,7 @@
 </head>
 
 <body>
-    <!-- ROBUST DEBUG LOGGER -->
-    <div id="debug-log"
-        style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.95); color: #0f0; font-family: monospace; font-size: 14px; padding: 10px; height: 150px; overflow-y: auto; z-index: 10000; border-bottom: 2px solid #333; pointer-events: none;">
-        <strong>SYSTEM LOG (Autoscroll):</strong><br>
-    </div>
-    <script>
-        window.logToScreen = function (msg, color = '#0f0') {
-            const el = document.getElementById('debug-log');
-            if (el) {
-                const line = document.createElement('div');
-                line.style.color = color;
-                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-                el.appendChild(line);
-                el.scrollTop = el.scrollHeight;
-            }
-        };
-        window.onerror = function (msg, url, line, col, error) {
-            window.logToScreen(`ERROR: ${msg} (${line}:${col})`, '#ff0000');
-            return false;
-        };
-        window.logToScreen('Logger initialized.', '#fff');
-    </script>
-    <!-- ROBUST DEBUG LOGGER -->
-    <div id="debug-log"
-        style="position: fixed; top: 0; left: 0; right: 0; background: rgba(0,0,0,0.95); color: #0f0; font-family: monospace; font-size: 14px; padding: 10px; height: 150px; overflow-y: auto; z-index: 10000; border-bottom: 2px solid #333; pointer-events: none;">
-        <strong>SYSTEM LOG (Autoscroll):</strong><br>
-    </div>
-    <script>
-        window.logToScreen = function (msg, color = '#0f0') {
-            const el = document.getElementById('debug-log');
-            if (el) {
-                const line = document.createElement('div');
-                line.style.color = color;
-                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-                el.appendChild(line);
-                el.scrollTop = el.scrollHeight;
-            }
-        };
-        window.onerror = function (msg, url, line, col, error) {
-            window.logToScreen(`ERROR: ${msg} (${line}:${col})`, '#ff0000');
-            return false;
-        };
-        window.logToScreen('Logger initialized.', '#fff');
-    </script>
+
 
     <!-- Header -->
     <header class="header">
@@ -358,16 +315,8 @@
                 </div>
             </div>
 
-            <!-- Prediction History -->
-            <div class="card">
-                <div class="card-header">
-                    <h3 class="card-title">Event Log</h3>
-                    <span class="card-count" id="event-count">0</span>
-                </div>
-                <div class="prediction-history" id="prediction-history">
-                    <div class="history-item placeholder">No events recorded</div>
-                </div>
-            </div>
+            <!-- Prediction History (REMOVED) -->
+
         </aside>
     </main>
 
@@ -450,27 +399,63 @@
                     </div>
                 </div>
             </div>
+            <div class="modal-footer">
+                <div id="modal-actions-default" class="modal-footer-actions">
+                    <button class="btn btn-secondary" onclick="toggleDismissOptions(true)">Dismiss Alert</button>
+                    <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">
+                        <span>Create Maintenance Ticket</span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+
+                <div id="modal-actions-dismiss" class="modal-footer-actions"
+                    style="display: none; width: 100%; justify-content: space-between; align-items: center; gap: 10px;">
+                    <div class="dismiss-dropdown-group" style="flex-grow: 1;">
+                        <select id="dismiss-reason-select" class="form-select"
+                            style="width: 100%; padding: 10px; border-radius: 6px; background: #2a2a35; color: #fff; border: 1px solid #3a3a45;">
+                            <option value="" disabled selected>Select Dismissal Reason...</option>
+                            <option value="False Alarm">False Alarm</option>
+                            <option value="Maintenance Completed">Maintenance Completed</option>
+                            <option value="System Test">System Test</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-secondary" onclick="toggleDismissOptions(false)">Cancel</button>
+                    <button class="btn btn-danger" onclick="submitDismissReason()">Confirm Dismiss</button>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="modal-footer">
-        <select class="btn btn-secondary" onchange="dismissWithReason(this)" style="cursor: pointer; appearance: auto;">
-            <option value="">Dismiss Alert</option>
-            <option value="Maintenance Completed">Maintenance Completed</option>
-            <option value="System Test">System Test</option>
-            <option value="Other">Other</option>
-        </select>
-        <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">
-            <span>Create Maintenance Ticket</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14M12 5l7 7-7 7" />
-            </svg>
-        </button>
-    </div>
-    </div>
-    </div>
+
+    <!-- Inline Dismiss Toggle Script (guaranteed to load before onclick handlers) -->
+    <script>
+        function toggleDismissOptions(show) {
+            console.log('[Swadesh Labs] toggleDismissOptions called with show =', show);
+            var defaultActions = document.getElementById('modal-actions-default');
+            var dismissActions = document.getElementById('modal-actions-dismiss');
+
+            if (defaultActions && dismissActions) {
+                if (show) {
+                    defaultActions.style.display = 'none';
+                    dismissActions.style.display = 'flex';
+                } else {
+                    defaultActions.style.display = 'flex';
+                    dismissActions.style.display = 'none';
+                    var select = document.getElementById('dismiss-reason-select');
+                    if (select) select.selectedIndex = 0;
+                }
+            } else {
+                console.error('[Swadesh Labs] Could not find modal action elements!');
+            }
+        }
+        window.toggleDismissOptions = toggleDismissOptions;
+    </script>
+
 
     <!-- JavaScript -->
-    <script src="/public/js/app.js?v=4"></script>
+    <script src="/public/js/app.js?v=12"></script>
 
 </body>
 

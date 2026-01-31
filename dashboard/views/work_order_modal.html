@@ -26,43 +26,41 @@
         <table class="details-table">
             <tr>
                 <td>ML Label:</td>
-                <td><span id="modal-label">{{.Label}}</span></td>
+                <td>{{.Label}}</td>
             </tr>
             <tr>
                 <td>Confidence:</td>
-                <td><span id="modal-confidence">{{.Confidence}}%</span></td>
-            </tr>
-            <tr>
-                <td>Flagged Sensors:</td>
-                <td id="modal-sensors">--</td>
+                <td>{{.Confidence}}%</td>
             </tr>
         </table>
     </div>
-
-    <!-- Dismissal Options (Hidden by default) -->
-    <div id="dismiss-options" class="dismiss-options"
-        style="display: none; margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
-        <h5 style="margin-top: 0; color: #aaa;">Reason for Dismissal:</h5>
-        <div class="form-group">
-            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
-                <input type="radio" name="dismiss-reason" value="False Alarm"> False Alarm
-            </label>
-            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
-                <input type="radio" name="dismiss-reason" value="Maintenance Scheduled"> Maintenance Scheduled
-            </label>
-            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
-                <input type="radio" name="dismiss-reason" value="Testing / Simulation"> Testing / Simulation
-            </label>
-            <label style="display: block; margin-bottom: 0.5rem; cursor: pointer;">
-                <input type="radio" name="dismiss-reason" value="Issue Resolved"> Issue Resolved
-            </label>
-        </div>
-        <button class="btn btn-secondary" onclick="confirmDismiss()" style="width: 100%; margin-top: 0.5rem;">Confirm
-            Dismiss</button>
-    </div>
 </div>
+
 <div class="modal-footer">
-    <button class="btn btn-secondary" onclick="handleDismissClick()">Dismiss Alert</button>
-    <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">Acknowledge & Create Ticket</button>
+    <div id="modal-actions-default" class="modal-footer-actions">
+        <button class="btn btn-secondary" onclick="toggleDismissOptions(true)">Dismiss Alert</button>
+        <button class="btn btn-primary" onclick="acknowledgeWorkOrder()">
+            <span>Create Maintenance Ticket</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+        </button>
+    </div>
+
+    <div id="modal-actions-dismiss" class="modal-footer-actions"
+        style="display: none; width: 100%; justify-content: space-between; align-items: center; gap: 10px;">
+        <div class="dismiss-dropdown-group" style="flex-grow: 1;">
+            <select id="dismiss-reason-select" class="form-select"
+                style="width: 100%; padding: 10px; border-radius: 6px; background: #2a2a35; color: #fff; border: 1px solid #3a3a45;">
+                <option value="" disabled selected>Select Dismissal Reason...</option>
+                <option value="False Alarm">False Alarm</option>
+                <option value="Maintenance Completed">Maintenance Completed</option>
+                <option value="System Test">System Test</option>
+                <option value="Other">Other</option>
+            </select>
+        </div>
+        <button class="btn btn-secondary" onclick="toggleDismissOptions(false)">Cancel</button>
+        <button class="btn btn-danger" onclick="submitDismissReason()">Confirm Dismiss</button>
+    </div>
 </div>
 {{end}}

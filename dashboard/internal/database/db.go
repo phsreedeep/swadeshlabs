@@ -1,68 +1,85 @@
 package database
 
 import (
-	"log"
+	"fmt"
+	"time"
 
-	"swadesh-dashboard/internal/models"
-
-	"github.com/glebarez/sqlite"
+	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
 
-// Initialize sets up SQLite database with GORM
-func Initialize(dbPath string) error {
+// PredictionLog stores ML inference results
+type PredictionLog struct {
+	gorm.Model
+	Label        string    `json:"label" gorm:"index"`
+	Confidence   float64   `json:"confidence"`
+	Timestamp    time.Time `json:"timestamp" gorm:"index"`
+	AnomalyScore float64   `json:"anomaly_score"`
+
+	// Telemetry Snapshot
+	VibrationPeak float64 `json:"vibration_peak"`
+	Temperature   float64 `json:"temperature"`
+
+	// Alert Management
+	IsAlert       bool       `json:"is_alert" gorm:"default:false"`
+	Dismissed     bool       `json:"dismissed" gorm:"default:false"`
+	DismissReason string     `json:"dismiss_reason"`
+	DismissedAt   *time.Time `json:"dismissed_at"`
+}
+
+func InitDB(dbPath string) error {
 	var err error
 	DB, err = gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Info),
+		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		return err
 	}
 
-	// Auto-migrate the schema
-	if err := DB.AutoMigrate(&models.PredictionLog{}); err != nil {
-		return err
-	}
-
-	log.Println("Database initialized successfully")
-	return nil
+	// Auto Migrate
+	return DB.AutoMigrate(&PredictionLog{})
 }
 
-// LogPrediction saves a critical ML prediction to the database
-func LogPrediction(payload *models.MLPayload) error {
-	if payload.IsCritical() {
-		predictionLog := payload.ToPredictionLog()
-		result := DB.Create(predictionLog)
-		if result.Error != nil {
-			log.Printf("Failed to log prediction: %v", result.Error)
-			return result.Error
-		}
-		log.Printf("Logged critical prediction: %s (%.2f%%)", payload.MLLabel, payload.Confidence*100)
+func SavePrediction(label string, confidence float64, anomalyScore float64, vib float64, temp float64) uint {
+	isAlert := label == "bearing_fault" && confidence > 0.8
+
+	log := PredictionLog{
+		Label:         label,
+		Confidence:    confidence,
+		Timestamp:     time.Now(),
+		AnomalyScore:  anomalyScore,
+		VibrationPeak: vib,
+		Temperature:   temp,
+		IsAlert:       isAlert,
 	}
-	return nil
+
+	result := DB.Create(&log)
+	if result.Error != nil {
+		fmt.Println("Error saving prediction:", result.Error)
+		return 0
+	}
+
+	if isAlert {
+		fmt.Printf("Logged critical prediction: %s (%.2f%%)\n", label, confidence*100)
+	}
+
+	return log.ID
 }
 
-// GetRecentPredictions fetches the last N predictions
-func GetRecentPredictions(limit int) ([]models.PredictionLog, error) {
-	var logs []models.PredictionLog
-	result := DB.Order("created_at desc").Limit(limit).Find(&logs)
+func GetRecentPredictions(limit int) ([]PredictionLog, error) {
+	var logs []PredictionLog
+	result := DB.Order("timestamp desc").Limit(limit).Find(&logs)
 	return logs, result.Error
 }
 
-// UpdateDismissReason updates the dismiss_reason field for a given prediction log
-func UpdateDismissReason(id string, reason string) error {
-	result := DB.Model(&models.PredictionLog{}).Where("id = ?", id).Update("dismiss_reason", reason)
-	if result.Error != nil {
-		log.Printf("Failed to update dismiss reason: %v", result.Error)
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		log.Printf("No prediction log found with ID: %s", id)
-		return gorm.ErrRecordNotFound
-	}
-	log.Printf("Updated dismiss reason for alert #%s: %s", id, reason)
-	return nil
+// DismissAlert marks a prediction as dismissed
+func DismissAlert(id string, reason string) error {
+	return DB.Model(&PredictionLog{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"dismissed":      true,
+		"dismiss_reason": reason,
+		"dismissed_at":   time.Now(),
+	}).Error
 }

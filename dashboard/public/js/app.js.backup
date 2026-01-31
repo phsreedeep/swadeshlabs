@@ -17,6 +17,9 @@ const CONFIG = {
     CRITICAL_THRESHOLD: 0.8
 };
 
+// DEBUG LOGGER OVERRIDE REMOVED
+
+
 // ============================================
 // State Management
 // ============================================
@@ -46,10 +49,6 @@ let vibrationIntensity = 0;
 // ============================================
 function init3DMotor() {
     const canvas = document.getElementById('motor-canvas');
-    if (!canvas) {
-        console.error("Motor canvas element not found");
-        return;
-    }
     const container = canvas.parentElement;
 
     // Scene
@@ -347,11 +346,9 @@ function animate() {
 
 function onWindowResize() {
     const container = document.getElementById('motor-3d');
-    if (container && camera && renderer) {
-        camera.aspect = container.clientWidth / container.clientHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(container.clientWidth, container.clientHeight);
-    }
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
 function updateMotor3D(label, confidence) {
@@ -381,20 +378,18 @@ function updateMotor3D(label, confidence) {
 
     // Update status ring
     const statusRing = document.getElementById('status-ring');
-    if (statusRing) {
-        statusRing.classList.remove('healthy', 'unbalance', 'fault');
+    statusRing.classList.remove('healthy', 'unbalance', 'fault');
 
-        switch (label) {
-            case 'healthy':
-                statusRing.classList.add('healthy');
-                break;
-            case 'unbalance':
-                statusRing.classList.add('unbalance');
-                break;
-            case 'bearing_fault':
-                statusRing.classList.add('fault');
-                break;
-        }
+    switch (label) {
+        case 'healthy':
+            statusRing.classList.add('healthy');
+            break;
+        case 'unbalance':
+            statusRing.classList.add('unbalance');
+            break;
+        case 'bearing_fault':
+            statusRing.classList.add('fault');
+            break;
     }
 }
 
@@ -584,7 +579,14 @@ function handleMLPayload(payload) {
     addToPredictionHistory(payload);
 
     // Check for critical fault
-    checkCriticalFault(payload);
+    console.log('[HANDLE_ML] About to call checkCriticalFault with:', payload.ml_label, payload.confidence);
+    try {
+        checkCriticalFault(payload);
+        console.log('[HANDLE_ML] checkCriticalFault call completed');
+    } catch (e) {
+        console.error('[HANDLE_ML] ERROR calling checkCriticalFault:', e);
+        alert('Critical error: ' + e.message);
+    }
 }
 
 // ============================================
@@ -776,7 +778,6 @@ let eventCounter = 0;
 function addToPredictionHistory(payload) {
     const history = document.getElementById('prediction-history');
     const eventCountEl = document.getElementById('event-count');
-    if (!history) return;
 
     // Remove placeholder if exists
     const placeholder = history.querySelector('.placeholder');
@@ -797,30 +798,40 @@ function addToPredictionHistory(payload) {
     let labelClass = '';
     switch (payload.ml_label) {
         case 'healthy': labelClass = 'healthy'; break;
-        case 'unbalance': labelClass = 'warning'; break;
-        case 'bearing_fault': labelClass = 'danger'; break;
+        case 'unbalance': labelClass = 'unbalance'; break;
+        case 'bearing_fault': labelClass = 'fault'; break;
     }
+
+    const time = new Date().toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
 
     item.innerHTML = `
-        <span class="history-time">${new Date().toLocaleTimeString()}</span>
-        <span class="history-label ${labelClass}">${payload.ml_label.toUpperCase()}</span>
-        <span class="history-conf">${Math.round(payload.confidence * 100)}%</span>
+        <span class="label ${labelClass}">${payload.ml_label.replace('_', ' ')}</span>
+        <span class="confidence">${Math.round(payload.confidence * 100)}% | ${time}</span>
     `;
 
-    // Add to top
+    // Add to beginning
     history.insertBefore(item, history.firstChild);
 
-    // Keep only last 50
-    if (history.children.length > 50) {
-        history.lastChild.remove();
+    // Keep only last 10
+    while (history.children.length > 10) {
+        history.removeChild(history.lastChild);
     }
 
-    // Also update state array
+    // Store in state
     state.predictionHistory.unshift(payload);
     if (state.predictionHistory.length > 50) {
         state.predictionHistory.pop();
     }
 }
+
+// Define CONFIG object if it doesn't exist, or add to it
+
+
 
 // ============================================
 // Critical Fault Detection & Work Order Modal
@@ -830,47 +841,68 @@ function checkCriticalFault(payload) {
     const isConfidence = payload.confidence > CONFIG.CRITICAL_THRESHOLD;
     const isShown = state.workOrderShown;
 
-    // console.log(`[DEBUG] Check: ${payload.ml_label} (${payload.confidence}) - Shown: ${isShown}`);
+    // Log the check status every time bearing_fault occurs (to avoid spamming logs for healthy)
+    if (isFault) {
+        console.log(`[DEBUG] Fault Check: Label=${payload.ml_label}, Conf=${payload.confidence.toFixed(2)}, Threshold=${CONFIG.CRITICAL_THRESHOLD}, Shown=${isShown}`);
+    }
 
     if (isFault && isConfidence && !isShown) {
-        // console.log('[ALERT] Triggering Work Order Popup!');
-        showWorkOrderModal(payload);
-    } else if (isFault && isShown) {
-        // console.log('[ALERT] Popup already active.');
+        console.log('[ALERT] TRIGGERING CRITICAL FAULT POPUP!');
+
+        // Fetch the most recent alert ID from the backend
+        fetch('/api/predictions')
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.length > 0) {
+                    const latestAlert = data[0];
+                    state.currentAlertId = latestAlert.ID;
+                    console.log('[ALERT] Alert ID:', state.currentAlertId);
+                }
+                showWorkOrderModal(payload);
+            })
+            .catch(error => {
+                console.error('[ALERT] Failed to fetch alert ID:', error);
+                showWorkOrderModal(payload);
+            });
     }
 }
 
 function showWorkOrderModal(payload) {
+    console.log('[MODAL] ========== SHOWING WORK ORDER MODAL ==========');
+    console.log('[MODAL] Payload:', payload);
+
     state.workOrderShown = true;
 
     const modal = document.getElementById('work-order-modal');
-    if (!modal) return;
+
+    if (!modal) {
+        console.error('[MODAL] FATAL: Modal element not found!');
+        alert('CRITICAL ERROR: Modal element missing from DOM!');
+        return;
+    }
+
+    console.log('[MODAL] Modal element found:', modal);
 
     // Update modal content
-    const labelEl = document.getElementById('modal-label');
-    if (labelEl) labelEl.textContent = payload.ml_label.toUpperCase().replace('_', ' ');
-
-    const confEl = document.getElementById('modal-confidence');
-    if (confEl) confEl.textContent = `${Math.round(payload.confidence * 100)}%`;
-
-    const timeEl = document.getElementById('modal-timestamp');
-    if (timeEl) timeEl.textContent = new Date().toLocaleString();
+    document.getElementById('modal-label').textContent = payload.ml_label.toUpperCase().replace('_', ' ');
+    document.getElementById('modal-confidence').textContent = `${Math.round(payload.confidence * 100)}%`;
+    document.getElementById('modal-timestamp').textContent = new Date().toLocaleString();
 
     // Calculate flagged sensors using production thresholds
     const sensorsTriggered = [];
-    if (payload.telemetry && payload.telemetry.vibration_peak > 2000) {
+    if (payload.telemetry.vibration_peak > 2000) {
         sensorsTriggered.push("Vibration Sensor");
     }
-    if (payload.telemetry && payload.telemetry.temperature_c > 60) {
+    if (payload.telemetry.temperature_c > 60) {
         sensorsTriggered.push("Thermal Sensor");
     }
-    if (payload.telemetry && payload.telemetry.current_amps > 2.0) {
+    if (payload.telemetry.current_amps > 2.0) {
         sensorsTriggered.push("Current Sensor");
     }
 
     // Default fallback
     if (sensorsTriggered.length === 0) {
-        sensorsTriggered.push("Unknown Source - AI Inference Only");
+        sensorsTriggered.push("Unknown Source");
     }
 
     // Update sensor badges container
@@ -885,29 +917,29 @@ function showWorkOrderModal(payload) {
     const dismissOptions = document.getElementById('dismiss-options');
     if (dismissOptions) dismissOptions.style.display = 'none';
 
-    // Show modal with failsafe styles
+    // BULLETPROOF MODAL DISPLAY - Use BOTH class and inline styles
+    console.log('[MODAL] Adding active class...');
     modal.classList.add('active');
-    modal.style.display = 'flex';
+
+    console.log('[MODAL] Setting inline styles as failsafe...');
     modal.style.opacity = '1';
     modal.style.visibility = 'visible';
+    modal.style.display = 'flex';
     modal.style.zIndex = '10000';
 
+    console.log('[MODAL] ========== MODAL SHOULD NOW BE VISIBLE ==========');
+
     // Play alert sound (optional)
-    playAlertSound();
+    try {
+        playAlertSound();
+    } catch (e) {
+        console.warn('[MODAL] Audio failed:', e);
+    }
 }
 
 function closeWorkOrderModal() {
     const modal = document.getElementById('work-order-modal');
-    if (modal) {
-        modal.classList.remove('active');
-        // Reset inline styles after animation
-        setTimeout(() => {
-            modal.style.display = '';
-            modal.style.opacity = '';
-            modal.style.visibility = '';
-            modal.style.zIndex = '';
-        }, 300);
-    }
+    modal.classList.remove('active');
 
     // Reset after 30 seconds to allow re-triggering
     setTimeout(() => {
@@ -916,21 +948,55 @@ function closeWorkOrderModal() {
 }
 
 async function submitDismissReason() {
-    state.workOrderShown = false; // Allow immediate re-trigger if dismissed? Or keep cooldown? Keeping standard cooldown via closeWorkOrderModal is safer.
+    const alertId = state.currentAlertId;
+    const select = document.getElementById('dismiss-reason-select');
+    const reason = select ? select.value : null;
 
-    // Actually, if dismissed, we might want to respect the 30s cooldown OR allow immediately if it comes back.
-    // Let's stick to the closeWorkOrderModal flow which has the 30s reset.
+    if (!reason) {
+        alert('Please select a reason.');
+        return;
+    }
 
-    closeWorkOrderModal();
+    if (!alertId) {
+        console.warn('[Swadesh Labs] No alert ID - closing without API call');
+        toggleDismissOptions(false);
+        closeWorkOrderModal();
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/alerts/${alertId}/dismiss`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason })
+        });
+
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error || `HTTP ${res.status}`);
+        }
+
+        console.log('[Swadesh Labs] Alert dismissed successfully');
+        toggleDismissOptions(false);
+        closeWorkOrderModal();
+    } catch (err) {
+        console.error('[Swadesh Labs] Dismiss failed:', err);
+        toggleDismissOptions(false);
+        closeWorkOrderModal();
+    }
 }
+
 
 function acknowledgeWorkOrder() {
     console.log('[WORK ORDER] Acknowledged by operator');
     closeWorkOrderModal();
-    // API call logic here...
+
+    // Here you could make an API call to create a ticket
+    // fetch('/api/work-orders', { method: 'POST', ... })
 }
 
 function playAlertSound() {
+    // Create a simple beep sound using Web Audio API
     try {
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const oscillator = audioContext.createOscillator();
@@ -950,41 +1016,80 @@ function playAlertSound() {
     }
 }
 
-// Make modal functions globally available for HTML onclick attributes
+// Test function to manually trigger modal (for debugging)
+window.testWorkOrderModal = function () {
+    console.log('[TEST] Manual modal trigger initiated');
+    const testPayload = {
+        ml_label: 'bearing_fault',
+        confidence: 0.95,
+        telemetry: {
+            vibration_peak: 2500,
+            temperature_c: 75,
+            current_amps: 2.5
+        }
+    };
+    showWorkOrderModal(testPayload);
+};
+
+// Make modal functions globally available
 window.closeWorkOrderModal = closeWorkOrderModal;
 window.acknowledgeWorkOrder = acknowledgeWorkOrder;
 window.submitDismissReason = submitDismissReason;
 window.showWorkOrderModal = showWorkOrderModal;
 
 // ============================================
+// ============================================
 // Initialization
 // ============================================
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[Swadesh Labs] Initializing dashboard...');
+    window.logToScreen && window.logToScreen('DOM Loaded. Starting init sequence...', '#0ff');
 
     // 1. Connect to SSE first (Priority)
     try {
         connectSSE();
+        window.logToScreen && window.logToScreen('SSE connection initiated.', '#0f0');
     } catch (e) {
         console.error('Failed to connect SSE:', e);
+        window.logToScreen && window.logToScreen('FATAL: SSE connection failed: ' + e.message, '#f00');
     }
 
     // 2. Initialize system time
-    updateSystemTime();
-
-    // 3. Initialize 3D Motor
-    if (typeof THREE !== 'undefined') {
-        init3DMotor();
-    } else {
-        console.error("THREE.js library not found");
+    try {
+        updateSystemTime();
+    } catch (e) {
+        console.error('Time init failed', e);
     }
 
-    // 4. Initialize charts
-    if (typeof Chart !== 'undefined') {
-        initCharts();
-    } else {
-        console.error("Chart.js library not found");
+    // 3. Initialize 3D Motor (Often fails if THREE not loaded)
+    try {
+        if (typeof THREE !== 'undefined') {
+            init3DMotor();
+            window.logToScreen && window.logToScreen('3D Motor initialized.', '#0f0');
+        } else {
+            throw new Error("THREE.js library not found");
+        }
+    } catch (e) {
+        console.error('Failed to initialize 3D Motor:', e);
+        window.logToScreen && window.logToScreen('WARNING: 3D Motor failed: ' + e.message, '#ff0');
+        // Hide container if failed
+        const container = document.getElementById('motor-container');
+        if (container) container.innerHTML = '<div style="padding:20px;color:#666">3D Visualization Unavailable</div>';
+    }
+
+    // 4. Initialize charts (Often fails if Chart not loaded)
+    try {
+        if (typeof Chart !== 'undefined') {
+            initCharts();
+            window.logToScreen && window.logToScreen('Charts initialized.', '#0f0');
+        } else {
+            throw new Error("Chart.js library not found");
+        }
+    } catch (e) {
+        console.error('Failed to initialize Charts:', e);
+        window.logToScreen && window.logToScreen('WARNING: Charts failed: ' + e.message, '#ff0');
     }
 
     console.log('[Swadesh Labs] Dashboard ready');
+    window.logToScreen && window.logToScreen('Dashboard initialization complete.', '#0f0');
 });

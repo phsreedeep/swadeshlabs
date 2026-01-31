@@ -3,157 +3,104 @@ package mqtt
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"math/rand"
 	"time"
 
 	"swadesh-dashboard/internal/database"
-	"swadesh-dashboard/internal/models"
-
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"swadesh-dashboard/internal/handlers"
 )
 
-const (
-	DefaultBroker = "tcp://localhost:1883"
-	Topic         = "swadesh/motor1/inference"
-	ClientID      = "swadesh-dashboard"
-)
-
-// Client wraps the MQTT client with payload broadcasting
-type Client struct {
-	client     mqtt.Client
-	broadcast  chan models.MLPayload
-	lastPayload *models.MLPayload
+// MLPayload matches the JSON sent by ESP32
+type MLPayload struct {
+	MLLabel      string    `json:"ml_label"`
+	Confidence   float64   `json:"confidence"`
+	AnomalyScore float64   `json:"anomaly_score"`
+	Telemetry    Telemetry `json:"telemetry"`
 }
 
-// NewClient creates a new MQTT client
-func NewClient(broker string, broadcast chan models.MLPayload) *Client {
-	if broker == "" {
-		broker = DefaultBroker
-	}
-
-	return &Client{
-		broadcast: broadcast,
-	}
+type Telemetry struct {
+	VibrationPeak float64 `json:"vibration_peak"` // micrometers
+	TemperatureC  float64 `json:"temperature_c"`  // Celsius
+	CurrentAmps   float64 `json:"current_amps"`   // Amps
 }
 
-// Connect establishes connection to the MQTT broker
-func (c *Client) Connect(broker string) error {
-	if broker == "" {
-		broker = DefaultBroker
-	}
-
-	opts := mqtt.NewClientOptions().
-		AddBroker(broker).
-		SetClientID(ClientID).
-		SetAutoReconnect(true).
-		SetConnectionLostHandler(func(client mqtt.Client, err error) {
-			log.Printf("MQTT connection lost: %v", err)
-		}).
-		SetOnConnectHandler(func(client mqtt.Client) {
-			log.Println("MQTT connected, subscribing to topic...")
-			c.subscribe()
-		})
-
-	c.client = mqtt.NewClient(opts)
-
-	token := c.client.Connect()
-	token.Wait()
-
-	if token.Error() != nil {
-		return fmt.Errorf("failed to connect to MQTT broker: %w", token.Error())
-	}
-
-	return nil
+// StartMQTTClient (Placeholder for real MQTT)
+func StartMQTTClient() {
+	// In real implementation: connect to broker, subscribe to topic
+	// On message: Parse JSON -> Save to DB -> Broadcast SSE
 }
 
-// subscribe sets up the message handler for the inference topic
-func (c *Client) subscribe() {
-	token := c.client.Subscribe(Topic, 1, func(client mqtt.Client, msg mqtt.Message) {
-		c.handleMessage(msg.Payload())
-	})
-	token.Wait()
+// StartMockPublisher simulates the ESP32 sending data every 3 seconds
+func StartMockPublisher() {
+	states := []string{"healthy", "healthy", "healthy", "unbalance", "unbalance", "bearing_fault", "bearing_fault"}
+	// Weighted to show faults for testing
 
-	if token.Error() != nil {
-		log.Printf("Failed to subscribe to %s: %v", Topic, token.Error())
-	} else {
-		log.Printf("Subscribed to topic: %s", Topic)
+	idx := 0
+
+	for {
+		// Cycle through states
+		currentState := states[idx%len(states)]
+		idx++
+
+		// Generate realistic data based on state
+		// Reduced frequency to avoid spamming while testing popup
+		payload := generateMockPayload(currentState)
+
+		// 1. Save to DB
+		// Also capture the ID so we can send it to frontend
+		alertID := database.SavePrediction(
+			payload.MLLabel,
+			payload.Confidence,
+			payload.AnomalyScore,
+			payload.Telemetry.VibrationPeak,
+			payload.Telemetry.TemperatureC,
+		)
+
+		// 2. Broadcast via SSE
+		// Allow adding the ID to the payload for the frontend to use
+		jsonBytes, _ := json.Marshal(payload)
+
+		// Broadcast
+		handlers.BroadcastMessage(jsonBytes)
+
+		fmt.Printf("[MOCK] Inference: %s (%.1f%% confidence) [ID: %d]\n", currentState, payload.Confidence*100, alertID)
+
+		time.Sleep(3 * time.Second)
 	}
 }
 
-// handleMessage parses the ML payload and broadcasts it
-func (c *Client) handleMessage(payload []byte) {
-	var mlPayload models.MLPayload
-	if err := json.Unmarshal(payload, &mlPayload); err != nil {
-		log.Printf("Failed to parse MQTT payload: %v", err)
-		return
+func generateMockPayload(label string) MLPayload {
+	t := Telemetry{}
+	confidence := 0.0
+	anomaly := 0.0
+
+	switch label {
+	case "healthy":
+		t.VibrationPeak = 150 + rand.Float64()*50 // 150-200 um
+		t.TemperatureC = 45 + rand.Float64()*5    // 45-50 C
+		t.CurrentAmps = 1.2 + rand.Float64()*0.1
+		confidence = 0.85 + rand.Float64()*0.14 // 85-99%
+		anomaly = rand.Float64() * 0.2          // Low anomaly
+
+	case "unbalance":
+		t.VibrationPeak = 600 + rand.Float64()*200 // 600-800 um
+		t.TemperatureC = 55 + rand.Float64()*10
+		t.CurrentAmps = 1.8 + rand.Float64()*0.3
+		confidence = 0.80 + rand.Float64()*0.15
+		anomaly = 0.4 + rand.Float64()*0.3
+
+	case "bearing_fault":
+		t.VibrationPeak = 1200 + rand.Float64()*800 // High vibration
+		t.TemperatureC = 65 + rand.Float64()*15     // High temp
+		t.CurrentAmps = 2.5 + rand.Float64()*0.5
+		confidence = 0.85 + rand.Float64()*0.14 // High confidence
+		anomaly = 0.8 + rand.Float64()*0.2      // High anomaly
 	}
 
-	log.Printf("Received ML inference: %s (%.2f%% confidence)", 
-		mlPayload.MLLabel, mlPayload.Confidence*100)
-
-	// Store critical predictions
-	if err := database.LogPrediction(&mlPayload); err != nil {
-		log.Printf("Failed to log prediction: %v", err)
+	return MLPayload{
+		MLLabel:      label,
+		Confidence:   confidence,
+		AnomalyScore: anomaly,
+		Telemetry:    t,
 	}
-
-	// Store last payload for new SSE connections
-	c.lastPayload = &mlPayload
-
-	// Broadcast to all SSE clients
-	select {
-	case c.broadcast <- mlPayload:
-	default:
-		log.Println("Broadcast channel full, dropping message")
-	}
-}
-
-// GetLastPayload returns the most recent payload (for new SSE clients)
-func (c *Client) GetLastPayload() *models.MLPayload {
-	return c.lastPayload
-}
-
-// Disconnect gracefully closes the MQTT connection
-func (c *Client) Disconnect() {
-	if c.client != nil && c.client.IsConnected() {
-		c.client.Disconnect(250)
-		log.Println("MQTT disconnected")
-	}
-}
-
-// StartMockPublisher simulates ESP32 data for testing (development only)
-func StartMockPublisher(broadcast chan models.MLPayload) {
-	labels := []string{"healthy", "unbalance", "bearing_fault"}
-	labelIdx := 0
-
-	ticker := time.NewTicker(3 * time.Second)
-	go func() {
-		for range ticker.C {
-			// Cycle through labels for demo
-			label := labels[labelIdx]
-			labelIdx = (labelIdx + 1) % len(labels)
-
-			confidence := 0.85 + (float64(time.Now().UnixNano()%15) / 100.0)
-			if confidence > 0.99 {
-				confidence = 0.99
-			}
-
-			payload := models.MLPayload{
-				MLLabel:      label,
-				Confidence:   confidence,
-				AnomalyScore: 0.1 + (float64(time.Now().UnixNano()%20) / 100.0),
-				Telemetry: models.Telemetry{
-					VibrationPeak: 300 + float64(time.Now().UnixNano()%200),
-					CurrentAmps:   1.0 + (float64(time.Now().UnixNano()%50) / 100.0),
-					TemperatureC:  45 + float64(time.Now().UnixNano()%30),
-				},
-			}
-
-			log.Printf("[MOCK] Inference: %s (%.1f%% confidence)", payload.MLLabel, payload.Confidence*100)
-			
-			// Log critical predictions
-			database.LogPrediction(&payload)
-			
-			broadcast <- payload
-		}
-	}()
 }

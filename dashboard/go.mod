@@ -1,12 +1,12 @@
 module swadesh-dashboard
 
-go 1.21
+go 1.23
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/glebarez/sqlite v1.10.0
 	github.com/labstack/echo/v4 v4.11.4
-	gorm.io/gorm v1.25.5
+	gorm.io/gorm v1.25.7
 )
 
 require (
