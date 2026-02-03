@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sensor Dashboard</title>
+</head>
+<body>
+  <h2>Live Sensor Data</h2>
+  <pre id="output"></pre>
+
+  <script>
+    const output = document.getElementById("output");
+    const evtSource = new EventSource("/events");
+
+    evtSource.onmessage = function(e) {
+      const data = JSON.parse(e.data);
+      output.textContent = `
+Status: ${data.status}
+Origin: ${data.origin}
+Confidence: ${(data.confidence*100).toFixed(1)}%
+Temperature: ${data.temperature.toFixed(2)}°C (Δ ${data.temp_delta.toFixed(2)})
+
+Mic Features: ${data.mic.map(f => f.toFixed(2)).join(", ")}
+Acc Features: ${data.acc.map(f => f.toFixed(2)).join(", ")}
+      `;
+    }
+  </script>
+</body>
+</html>
+
