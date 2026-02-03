@@ -1,79 +1,37 @@
 #include "esp_adc/adc_continuous.h"
-#include <OneWire.h>
+#include <math.h>
 
 /* ================= CONFIG ================= */
 
-#define ADC_RATE_HZ     20000
-#define BUF_SIZE        1024
-#define MAX_SAMPLES     1000 
+#define SAMPLE_RATE_HZ 10000   
+#define FFT_SIZE 256
+#define BUF_SIZE 1024
 
-#define ADC_MAX         4095.0
-#define VREF            3.3
+#define ADC_MAX 4095.0f
+#define VREF 3.3f
 
-#define ZERO_G_V        1.708
-#define MV_PER_G        0.300
+#define ZERO_G_V 1.708f
+#define MV_PER_G 0.300f
 
-#define CT_OFFSET       1300
+/* ================= THRESHOLDS FROM CSV ================= */
 
-#define ONEWIRE_PIN     14
-OneWire ds(ONEWIRE_PIN);
+#define T_LOW  0.0294f
+#define T_MID  0.3223f
+#define T_HIGH 0.8105f
 
-/* ================= DATA FRAME ================= */
+/* ================= BUFFERS ================= */
 
-#pragma pack(push, 1)
-typedef struct {
-    uint32_t ts_us;
-    float audio_v;
-    float accel_g;
-    uint16_t ct_adc;
-    float temp_c;
-} sample_t;
-#pragma pack(pop)
+static float samples[FFT_SIZE];
+static size_t sample_idx = 0;
 
-/* ================= GLOBALS ================= */
+/* ================= ADC ================= */
 
 adc_continuous_handle_t adc_handle;
-sample_t sample_buf[MAX_SAMPLES];
-uint16_t sample_idx = 0;
-
-float current_temp = NAN;
-uint32_t last_temp_ms = 0;
-uint32_t start_time_us = 0;
-
-/* ================= TEMP (NON-BLOCKING) ================= */
-
-void update_temp_async() {
-    static bool converting = false;
-    static uint32_t t0;
-
-    if (!converting && millis() - last_temp_ms > 2000) {
-        if (ds.reset()) {
-            ds.skip();
-            ds.write(0x44);
-            t0 = millis();
-            converting = true;
-        }
-    }
-
-    if (converting && millis() - t0 >= 750) {
-        if (ds.reset()) {
-            ds.skip();
-            ds.write(0xBE);
-            byte data[9];
-            for (int i = 0; i < 9; i++) data[i] = ds.read();
-            int16_t raw = (data[1] << 8) | data[0];
-            current_temp = raw / 16.0f;
-        }
-        last_temp_ms = millis();
-        converting = false;
-    }
-}
 
 /* ================= SETUP ================= */
 
 void setup() {
     Serial.begin(1000000);
-    start_time_us = micros();
 
     adc_continuous_handle_cfg_t hc = {
         .max_store_buf_size = 8192,
@@ -81,16 +39,14 @@ void setup() {
     };
     adc_continuous_new_handle(&hc, &adc_handle);
 
-    static adc_digi_pattern_config_t pattern[3] = {
-        {ADC_ATTEN_DB_11, ADC_CHANNEL_2, ADC_UNIT_1, ADC_BITWIDTH_12}, // audio
-        {ADC_ATTEN_DB_11, ADC_CHANNEL_3, ADC_UNIT_1, ADC_BITWIDTH_12}, // accel
-        {ADC_ATTEN_DB_11, ADC_CHANNEL_4, ADC_UNIT_1, ADC_BITWIDTH_12}  // CT
+    static adc_digi_pattern_config_t pattern[] = {
+        {ADC_ATTEN_DB_11, ADC_CHANNEL_3, ADC_UNIT_1, ADC_BITWIDTH_12}
     };
 
     adc_continuous_config_t cfg = {
-        .pattern_num = 3,
+        .pattern_num = 1,
         .adc_pattern = pattern,
-        .sample_freq_hz = ADC_RATE_HZ,
+        .sample_freq_hz = SAMPLE_RATE_HZ,
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2
     };
@@ -99,10 +55,66 @@ void setup() {
     adc_continuous_start(adc_handle);
 }
 
+/* ================= DFT ================= */
+
+void compute_band_energy() {
+
+    float low = 0, mid = 0, high = 0;
+
+    for (int k = 1; k < FFT_SIZE / 2; k++) {
+
+        float real = 0;
+        float imag = 0;
+
+        for (int n = 0; n < FFT_SIZE; n++) {
+            float angle = 2.0f * PI * k * n / FFT_SIZE;
+            real += samples[n] * cos(angle);
+            imag -= samples[n] * sin(angle);
+        }
+
+        float mag2 = real * real + imag * imag;
+        float freq = (k * SAMPLE_RATE_HZ) / FFT_SIZE;  // adjusted for 10 kHz
+
+        if (freq <= 200.0f)
+            low += mag2;
+        else if (freq <= 800.0f)
+            mid += mag2;
+        else
+            high += mag2;
+    }
+
+    float total = low + mid + high + 1e-9f;
+
+    float R_low  = low / total;
+    float R_mid  = mid / total;
+    float R_high = high / total;
+
+    // Print ratios
+    Serial.print("RATIO | LOW=");
+    Serial.print(R_low, 3);
+    Serial.print(" MID=");
+    Serial.print(R_mid, 3);
+    Serial.print(" HIGH=");
+    Serial.println(R_high, 3);
+
+    // Decision based on thresholds from CSV
+    if (R_high > T_HIGH) {
+        Serial.println("FAULT DETECTED: HIGH-BAND ENERGY ELEVATED");
+    } 
+    else if (R_mid > T_MID) {
+        Serial.println("FAULT DETECTED: MID-BAND ENERGY ELEVATED");
+    } 
+    else if (R_low > T_LOW) {
+        Serial.println("NOTICE: LOW-BAND ENERGY ELEVATED");
+    } 
+    else {
+        Serial.println("HEALTHY VIBRATION PROFILE");
+    }
+}
+
 /* ================= LOOP ================= */
 
 void loop() {
-    update_temp_async();
 
     uint8_t buf[BUF_SIZE];
     uint32_t bytes_read;
@@ -110,48 +122,21 @@ void loop() {
     if (adc_continuous_read(adc_handle, buf, sizeof(buf), &bytes_read, 0) != ESP_OK)
         return;
 
-    static bool have_audio = false, have_accel = false, have_ct = false;
-    static sample_t cur;
-
     int n = bytes_read / sizeof(adc_digi_output_data_t);
 
     for (int i = 0; i < n; i++) {
+
         auto *d = (adc_digi_output_data_t*)&buf[i * sizeof(adc_digi_output_data_t)];
         uint16_t val = d->type2.data & 0x0FFF;
+
         float v = (val / ADC_MAX) * VREF;
+        float accel_g = (v - ZERO_G_V) / MV_PER_G;
 
-        switch (d->type2.channel) {
-            case ADC_CHANNEL_2: // audio
-                cur.ts_us = micros() - start_time_us;
-                cur.audio_v = v;
-                cur.temp_c = current_temp;
-                have_audio = true;
-                break;
+        samples[sample_idx++] = accel_g;
 
-            case ADC_CHANNEL_3: // accel
-                cur.accel_g = (v - ZERO_G_V) / MV_PER_G;
-                have_accel = true;
-                break;
-
-            case ADC_CHANNEL_4: // CT
-                cur.ct_adc = (val > CT_OFFSET) ? (val - CT_OFFSET) : 0;
-                have_ct = true;
-                break;
-        }
-
-        if (have_audio && have_accel && have_ct) {
-            sample_buf[sample_idx++] = cur;
-            have_audio = have_accel = have_ct = false;
-
-            if (sample_idx >= MAX_SAMPLES) {
-                uint8_t marker = 0xAA;
-                uint16_t count = sample_idx;
-                Serial.write(&marker, 1);
-                Serial.write((uint8_t*)&count, 2);
-                Serial.write((uint8_t*)sample_buf, count * sizeof(sample_t));
-                Serial.flush();
-                sample_idx = 0;
-            }
+        if (sample_idx >= FFT_SIZE) {
+            compute_band_energy();
+            sample_idx = 0;
         }
     }
 }

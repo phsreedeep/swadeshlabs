@@ -74,9 +74,10 @@ func GetRecentPredictions(limit int) ([]PredictionLog, error) {
 	result := DB.Order("timestamp desc").Limit(limit).Find(&logs)
 	return logs, result.Error
 }
+// internal/database/database.go
 
-// DismissAlert marks a prediction as dismissed
-func DismissAlert(id string, reason string) error {
+// Ensure this name matches the handler call exactly
+func UpdateDismissReason(id string, reason string) error {
 	return DB.Model(&PredictionLog{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"dismissed":      true,
 		"dismiss_reason": reason,
